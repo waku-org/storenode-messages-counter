@@ -11,7 +11,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/multiformats/go-multiaddr v0.12.3
 	github.com/urfave/cli/v2 v2.27.2
-	github.com/waku-org/go-waku v0.8.1-0.20240507175626-19d27befd98b
+	github.com/waku-org/go-waku v0.8.1-0.20240509190914-febeb6c9c9b8
 	go.uber.org/zap v1.27.0
 )
 

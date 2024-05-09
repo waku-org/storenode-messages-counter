@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -26,7 +27,14 @@ const (
 	DoesNotExist
 )
 
+const timeInterval = 2 * time.Minute
+const delay = 5 * time.Minute
 const maxAttempts = 3
+
+type MessageAttr struct {
+	Timestamp   uint64
+	PubsubTopic string
+}
 
 func Execute(ctx context.Context, options Options) error {
 	// Set encoding for logs (console, json, ...)
@@ -63,9 +71,6 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 
-	timeInterval := 2 * time.Minute
-	delay := 5 * time.Minute
-
 	ticker := time.NewTicker(timeInterval)
 	defer ticker.Stop()
 	for {
@@ -73,209 +78,261 @@ func Execute(ctx context.Context, options Options) error {
 		case <-ctx.Done():
 			break
 		case <-ticker.C:
-			// [MessageHash][StoreNode] = exists?
-			msgMap := make(map[pb.MessageHash]map[string]MessageExistence)
-			msgTopic := make(map[pb.MessageHash]string)
+			verifyHistory(ctx, wakuNode, dbStore, logger)
+		}
+	}
+}
 
-			topicSyncStatus, err := dbStore.GetTopicSyncStatus(ctx, options.ClusterID, options.PubSubTopics.Value())
+var msgMapLock sync.Locker
+var msgMap map[pb.MessageHash]map[string]MessageExistence
+var msgAttr map[pb.MessageHash]MessageAttr
+
+func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
+	// [MessageHash][StoreNode] = exists?
+	msgMapLock.Lock()
+	msgMap := make(map[pb.MessageHash]map[string]MessageExistence)
+	msgAttr := make(map[pb.MessageHash]MessageAttr)
+	msgMapLock.Unlock()
+
+	topicSyncStatus, err := dbStore.GetTopicSyncStatus(ctx, options.ClusterID, options.PubSubTopics.Value())
+	if err != nil {
+		return err
+	}
+
+	tx, err := dbStore.GetTrx(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err == nil {
+			err = tx.Commit()
+			return
+		}
+		// don't shadow original error
+		_ = tx.Rollback()
+	}()
+
+	wg := sync.WaitGroup{}
+	for topic, lastSyncTimestamp := range topicSyncStatus {
+		go func() {
+			defer wg.Done()
+			retrieveHistory(ctx, topic, lastSyncTimestamp, wakuNode, dbStore, tx, logger)
+		}()
+	}
+	wg.Wait()
+
+	// Verify for each storenode which messages are not available, and query
+	// for their existence using message hash
+	// ========================================================================
+	msgsToVerify := make(map[string][]pb.MessageHash) // storenode -> msgHash
+	msgMapLock.Lock()
+	for msgHash, nodes := range msgMap {
+		for node, existence := range nodes {
+			if existence != Exists {
+				msgsToVerify[node] = append(msgsToVerify[node], msgHash)
+			}
+		}
+	}
+	msgMapLock.Unlock()
+
+	wg = sync.WaitGroup{}
+	for node, messageHashes := range msgsToVerify {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			nodeMultiaddr, _ := multiaddr.NewMultiaddr(node)
+			verifyMessageExistence(ctx, nodeMultiaddr, messageHashes, wakuNode, logger)
+		}()
+	}
+	wg.Wait()
+
+	// If a message is not available, store in DB in which store nodes it wasnt
+	// available and its timestamp
+	// ========================================================================
+	msgMapLock.Lock()
+	defer msgMapLock.Unlock()
+	for msgHash, nodes := range msgMap {
+		var missingIn []string
+		var unknownIn []string
+		for node, existence := range nodes {
+			if existence == DoesNotExist {
+				missingIn = append(missingIn, node)
+			} else if existence == Unknown {
+				unknownIn = append(unknownIn, node)
+			}
+		}
+
+		err := dbStore.RecordMessage(tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, missingIn, "does_not_exist")
+		if err != nil {
+			return err
+		}
+
+		err = dbStore.RecordMessage(tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
+		if err != nil {
+			return err
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func retrieveHistory(ctx context.Context, topic string, lastSyncTimestamp *time.Time, wakuNode *node.WakuNode, dbStore *persistence.DBStore, tx *sql.Tx, logger *zap.Logger) {
+	now := wakuNode.Timesource().Now()
+
+	// Query is done with a delay
+	startTime := now.Add(-(timeInterval + delay))
+	if lastSyncTimestamp != nil {
+		startTime = *lastSyncTimestamp
+	}
+	endTime := now.Add(-delay)
+
+	if startTime.After(endTime) {
+		log.Warn("too soon to retrieve messages for topic", zap.String("topic", topic))
+		return
+	}
+
+	// Determine if the messages exist across all nodes
+	for _, node := range options.StoreNodes {
+		storeNodeFailure := false
+		var result *store.Result
+		var err error
+
+	retry1:
+		for i := 0; i < maxAttempts; i++ {
+			result, err = wakuNode.Store().Query(ctx, store.FilterCriteria{
+				ContentFilter: protocol.NewContentFilter(topic),
+				TimeStart:     proto.Int64(startTime.UnixNano()),
+				TimeEnd:       proto.Int64(endTime.UnixNano()),
+			}, store.WithPeerAddr(node))
 			if err != nil {
-				return err
+				logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
+				storeNodeFailure = true
+				time.Sleep(2 * time.Second)
+			} else {
+				storeNodeFailure = false
+				break retry1
 			}
+		}
 
-			trx, err := dbStore.GetTrx(ctx)
-			if err != nil {
-				return err
-			}
-
-			// TODO: commit or revert trx
-
-			for topic, lastSyncTimestamp := range topicSyncStatus {
-				now := wakuNode.Timesource().Now()
-
-				// Query is done with a delay
-				startTime := now.Add(-(timeInterval + delay))
-				if lastSyncTimestamp != nil {
-					startTime = *lastSyncTimestamp
-				}
-				endTime := now.Add(-delay)
-
-				if startTime.After(endTime) {
-					log.Warn("too soon to retrieve messages for topic", zap.String("topic", topic))
-					continue
-				}
-
-				// Determine if the messages exist across all nodes
-				for _, node := range options.StoreNodes {
-					// TODO: make async
-					storeNodeFailure := false
-					var result *store.Result
-
-				retry1:
-					for i := 0; i < maxAttempts; i++ {
-						result, err = wakuNode.Store().Query(ctx, store.FilterCriteria{
-							ContentFilter: protocol.NewContentFilter(topic),
-							TimeStart:     proto.Int64(startTime.UnixNano()),
-							TimeEnd:       proto.Int64(endTime.UnixNano()),
-						}, store.WithPeerAddr(node), store.IncludeData(false))
-						if err != nil {
-							logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
-							storeNodeFailure = true
-							time.Sleep(2 * time.Second)
-						} else {
-							storeNodeFailure = false
-							break retry1
-						}
-					}
-
-					if storeNodeFailure {
-						// TODO: Notify that storenode was not available from X to Y time
-						logger.Error("storenode not available", zap.Stringer("storenode", node), zap.Time("startTime", startTime), zap.Time("endTime", endTime))
-					} else {
-						for {
-							storeNodeFailure = false
-							var hasNext bool
-						retry2:
-							for i := 0; i < maxAttempts; i++ {
-								hasNext, err = result.Next(ctx)
-								if err != nil {
-									logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
-									storeNodeFailure = true
-									time.Sleep(2 * time.Second)
-								} else {
-									break retry2
-								}
-							}
-
-							if storeNodeFailure {
-								// TODO: Notify that storenode was not available from X to Y time
-								logger.Error("storenode not available",
-									zap.Stringer("storenode", node),
-									zap.Time("startTime", startTime),
-									zap.Time("endTime", endTime),
-									zap.String("topic", topic),
-									zap.String("cursor", hexutil.Encode(result.Cursor())))
-							} else {
-								if !hasNext { // No more messages available
-									break
-								}
-
-								for _, mkv := range result.Messages() {
-									hash := mkv.WakuMessageHash()
-									_, ok := msgMap[hash]
-									if !ok {
-										msgMap[hash] = make(map[string]MessageExistence)
-									}
-									msgMap[hash][node.String()] = Exists
-									msgTopic[hash] = mkv.PubsubTopic
-								}
-							}
-						}
-					}
-				}
-
-				// Update db with last sync time
-				dbStore.UpdateTopicSyncState(trx, options.ClusterID, topic, endTime)
-			}
-
-			// Verify for each storenode which messages are not available, and query for their existence using message hash
-
-			// Node -> msgHash
-			msgsToVerify := make(map[string][]pb.MessageHash)
-			for msgHash, nodes := range msgMap {
-				for node, existence := range nodes {
-					if existence != Exists {
-						msgsToVerify[node] = append(msgsToVerify[node], msgHash)
-					}
-				}
-			}
-
-			// TODO: async
-			for node, messageHashes := range msgsToVerify {
-				nodeMultiaddr, err := multiaddr.NewMultiaddr(node)
-				if err != nil {
-					return err
-				}
-
-				storeNodeFailure := false
-				var result *store.Result
-			retry3:
+		if storeNodeFailure {
+			// TODO: Notify that storenode was not available from X to Y time
+			logger.Error("storenode not available", zap.Stringer("storenode", node), zap.Time("startTime", startTime), zap.Time("endTime", endTime))
+		} else {
+			for {
+				storeNodeFailure = false
+				var hasNext bool
+			retry2:
 				for i := 0; i < maxAttempts; i++ {
-					result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeerAddr(nodeMultiaddr))
+					hasNext, err = result.Next(ctx)
 					if err != nil {
-						logger.Error("could not query storenode", zap.Stringer("storenode", nodeMultiaddr), zap.Error(err))
+						logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
 						storeNodeFailure = true
 						time.Sleep(2 * time.Second)
 					} else {
-						break retry3
+						break retry2
 					}
 				}
 
 				if storeNodeFailure {
 					// TODO: Notify that storenode was not available from X to Y time
 					logger.Error("storenode not available",
-						zap.String("storenode", node),
-						zap.Any("hashes", messageHashes))
+						zap.Stringer("storenode", node),
+						zap.Time("startTime", startTime),
+						zap.Time("endTime", endTime),
+						zap.String("topic", topic),
+						zap.String("cursor", hexutil.Encode(result.Cursor())))
 				} else {
-					for {
-						storeNodeFailure = false
-						var hasNext bool
-					retry4:
-						for i := 0; i < maxAttempts; i++ {
-							hasNext, err = result.Next(ctx)
-							if err != nil {
-								logger.Error("could not query storenode", zap.String("storenode", node), zap.Error(err))
-								storeNodeFailure = true
-								time.Sleep(2 * time.Second)
-							} else {
-								break retry4
-							}
+					if !hasNext { // No more messages available
+						break
+					}
+
+					msgMapLock.Lock()
+					for _, mkv := range result.Messages() {
+						hash := mkv.WakuMessageHash()
+						_, ok := msgMap[hash]
+						if !ok {
+							msgMap[hash] = make(map[string]MessageExistence)
 						}
-
-						if storeNodeFailure {
-							// TODO: Notify that storenode was not available from X to Y time
-							logger.Error("storenode not available",
-								zap.String("storenode", node),
-								zap.Any("hashes", messageHashes),
-								zap.String("cursor", hexutil.Encode(result.Cursor())))
-						} else {
-							if !hasNext { // No more messages available
-								break
-							}
-
-							for _, mkv := range result.Messages() {
-								hash := mkv.WakuMessageHash()
-								_, ok := msgMap[hash]
-								if !ok {
-									msgMap[hash] = make(map[string]MessageExistence)
-								}
-								msgMap[hash][node] = Exists
-							}
+						msgMap[hash][node.String()] = Exists
+						msgAttr[hash] = MessageAttr{
+							Timestamp:   uint64(mkv.Message.GetTimestamp()),
+							PubsubTopic: mkv.GetPubsubTopic(),
 						}
 					}
+					msgMapLock.Unlock()
 				}
 			}
+		}
+	}
 
-			// TODO: if a message is not available, store in DB in which store nodes it wasnt available and from which time to which time
-			for msgHash, nodes := range msgMap {
-				var missingIn []string
-				for node, existence := range nodes {
-					if existence != Exists {
-						missingIn = append(missingIn, node)
-					}
-				}
+	// Update db with last sync time
+	dbStore.UpdateTopicSyncState(tx, options.ClusterID, topic, endTime)
+}
 
-				err := dbStore.RecordMissingMessage(trx, msgHash, msgTopic[msgHash], missingIn)
+func verifyMessageExistence(ctx context.Context, nodeAddr multiaddr.Multiaddr, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, logger *zap.Logger) {
+	storeNodeFailure := false
+	var result *store.Result
+	var err error
+retry3:
+	for i := 0; i < maxAttempts; i++ {
+		result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeerAddr(nodeAddr))
+		if err != nil {
+			logger.Error("could not query storenode", zap.Stringer("storenode", nodeAddr), zap.Error(err))
+			storeNodeFailure = true
+			time.Sleep(2 * time.Second)
+		} else {
+			break retry3
+		}
+	}
+
+	if storeNodeFailure {
+		// TODO: Notify that storenode was not available from X to Y time
+		logger.Error("storenode not available",
+			zap.Stringer("storenode", nodeAddr),
+			zap.Stringers("hashes", messageHashes))
+	} else {
+		for {
+			storeNodeFailure = false
+			var hasNext bool
+		retry4:
+			for i := 0; i < maxAttempts; i++ {
+				hasNext, err = result.Next(ctx)
 				if err != nil {
-					return err
+					logger.Error("could not query storenode", zap.Stringer("storenode", nodeAddr), zap.Error(err))
+					storeNodeFailure = true
+					time.Sleep(2 * time.Second)
+				} else {
+					break retry4
 				}
 			}
 
-			err = trx.Commit()
-			// TODO: revert?
-			if err != nil {
-				return err
-			}
+			if storeNodeFailure {
+				// TODO: Notify that storenode was not available from X to Y time
+				logger.Error("storenode not available",
+					zap.Stringer("storenode", nodeAddr),
+					zap.Stringers("hashes", messageHashes),
+					zap.String("cursor", hexutil.Encode(result.Cursor())))
+			} else {
+				if !hasNext { // No more messages available
+					break
+				}
 
+				msgMapLock.Lock()
+				for _, mkv := range result.Messages() {
+					hash := mkv.WakuMessageHash()
+					_, ok := msgMap[hash]
+					if !ok {
+						msgMap[hash] = make(map[string]MessageExistence)
+					}
+					msgMap[hash][nodeAddr.String()] = Exists
+				}
+				msgMapLock.Unlock()
+			}
 		}
 	}
 }

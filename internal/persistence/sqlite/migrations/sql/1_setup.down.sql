@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idxMsg1;
+DROP TABLE IF EXISTS syncTopicStatus;
+DROP TABLE IF EXISTS missingMessages;

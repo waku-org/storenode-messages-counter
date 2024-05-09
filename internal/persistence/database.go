@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
 	"github.com/waku-org/go-waku/waku/v2/timesource"
 	"go.uber.org/zap"
 )
@@ -132,6 +133,11 @@ func (d *DBStore) cleanOlderRecords(ctx context.Context) error {
 	d.log.Info("Cleaning older records...")
 
 	// TODO:
+	deleteFrom := time.Now().Add(-14 * 24 * time.Hour)
+	_, err := d.db.Exec("DELETE FROM missingMessages WHERE storedAt <", deleteFrom)
+	if err != nil {
+		return err
+	}
 
 	d.log.Info("Older records removed")
 
@@ -169,7 +175,7 @@ func (d *DBStore) Stop() {
 }
 
 func (d *DBStore) GetTrx(ctx context.Context) (*sql.Tx, error) {
-	return d.db.BeginTx(ctx, nil)
+	return d.db.BeginTx(ctx, &sql.TxOptions{})
 }
 
 func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsubTopics []string) (map[string]*time.Time, error) {
@@ -209,6 +215,23 @@ func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string,
 	_, err = stmt.Exec(clusterID, topic, lastSyncTimestamp.UnixNano())
 	if err != nil {
 		return err
+	}
+
+	return stmt.Close()
+}
+
+func (d *DBStore) RecordMessage(tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []string, status string) error {
+	stmt, err := tx.Prepare("INSERT INTO missingMessages(clusterId, pubsubTopic, messageHash, msgTimestamp, storenode, status, storedAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+	for _, s := range storenodes {
+		_, err := stmt.Exec(clusterID, topic, msgHash.String(), timestamp, s, status, now)
+		if err != nil {
+			return err
+		}
 	}
 
 	return stmt.Close()
