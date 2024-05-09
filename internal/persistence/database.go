@@ -130,16 +130,15 @@ func (d *DBStore) Start(ctx context.Context, timesource timesource.Timesource) e
 }
 
 func (d *DBStore) cleanOlderRecords(ctx context.Context) error {
-	d.log.Info("Cleaning older records...")
+	d.log.Debug("Cleaning older records...")
 
-	// TODO:
 	deleteFrom := time.Now().Add(-14 * 24 * time.Hour)
-	_, err := d.db.Exec("DELETE FROM missingMessages WHERE storedAt <", deleteFrom)
+	_, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < ?", deleteFrom)
 	if err != nil {
 		return err
 	}
 
-	d.log.Info("Older records removed")
+	d.log.Debug("Older records removed")
 
 	return nil
 }
@@ -181,7 +180,7 @@ func (d *DBStore) GetTrx(ctx context.Context) (*sql.Tx, error) {
 func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsubTopics []string) (map[string]*time.Time, error) {
 	result := make(map[string]*time.Time)
 	for _, topic := range pubsubTopics {
-		result[topic] = &time.Time{}
+		result[topic] = nil
 	}
 
 	sqlQuery := `SELECT pubsubTopic, lastSyncTimestamp FROM syncTopicStatus WHERE clusterId = ?`
@@ -198,8 +197,10 @@ func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsub
 			return nil, err
 		}
 
-		t := time.Unix(0, lastSyncTimestamp)
-		result[pubsubTopic] = &t
+		if lastSyncTimestamp != 0 {
+			t := time.Unix(0, lastSyncTimestamp)
+			result[pubsubTopic] = &t
+		}
 	}
 	defer rows.Close()
 
@@ -220,15 +221,15 @@ func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string,
 	return stmt.Close()
 }
 
-func (d *DBStore) RecordMessage(tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []string, status string) error {
-	stmt, err := tx.Prepare("INSERT INTO missingMessages(clusterId, pubsubTopic, messageHash, msgTimestamp, storenode, status, storedAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
+func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []string, status string) error {
+	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, clusterId, pubsubTopic, messageHash, msgTimestamp, storenode, status, storedAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		return err
 	}
 
 	now := time.Now().Unix()
 	for _, s := range storenodes {
-		_, err := stmt.Exec(clusterID, topic, msgHash.String(), timestamp, s, status, now)
+		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, s, status, now)
 		if err != nil {
 			return err
 		}

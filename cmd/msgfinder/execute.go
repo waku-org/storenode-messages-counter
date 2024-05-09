@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/google/uuid"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/waku-org/go-waku/waku/v2/node"
 	"github.com/waku-org/go-waku/waku/v2/protocol"
@@ -36,6 +37,8 @@ type MessageAttr struct {
 	PubsubTopic string
 }
 
+type contextKey string
+
 func Execute(ctx context.Context, options Options) error {
 	// Set encoding for logs (console, json, ...)
 	// Note that libp2p reads the encoding from GOLOG_LOG_FMT env var.
@@ -60,6 +63,9 @@ func Execute(ctx context.Context, options Options) error {
 		node.WithNTP(),
 		node.WithClusterID(uint16(options.ClusterID)),
 	)
+	if err != nil {
+		return err
+	}
 	err = wakuNode.Start(ctx)
 	if err != nil {
 		return err
@@ -71,23 +77,31 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 
-	ticker := time.NewTicker(timeInterval)
-	defer ticker.Stop()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			break
-		case <-ticker.C:
-			verifyHistory(ctx, wakuNode, dbStore, logger)
+			return nil
+		case <-timer.C:
+			err := verifyHistory(ctx, wakuNode, dbStore, logger)
+			if err != nil {
+				return err
+			}
+			timer.Reset(timeInterval)
 		}
 	}
 }
 
-var msgMapLock sync.Locker
+var msgMapLock sync.Mutex
 var msgMap map[pb.MessageHash]map[string]MessageExistence
 var msgAttr map[pb.MessageHash]MessageAttr
 
 func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
+	runId := uuid.New().String()
+
+	logger = logger.With(zap.String("runId", runId))
+
 	// [MessageHash][StoreNode] = exists?
 	msgMapLock.Lock()
 	msgMap := make(map[pb.MessageHash]map[string]MessageExistence)
@@ -115,10 +129,11 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 
 	wg := sync.WaitGroup{}
 	for topic, lastSyncTimestamp := range topicSyncStatus {
-		go func() {
+		wg.Add(1)
+		go func(topic string, lastSyncTimestamp *time.Time) {
 			defer wg.Done()
 			retrieveHistory(ctx, topic, lastSyncTimestamp, wakuNode, dbStore, tx, logger)
-		}()
+		}(topic, lastSyncTimestamp)
 	}
 	wg.Wait()
 
@@ -139,11 +154,11 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 	wg = sync.WaitGroup{}
 	for node, messageHashes := range msgsToVerify {
 		wg.Add(1)
-		go func() {
+		go func(node string, messageHashes []pb.MessageHash) {
 			defer wg.Done()
 			nodeMultiaddr, _ := multiaddr.NewMultiaddr(node)
 			verifyMessageExistence(ctx, nodeMultiaddr, messageHashes, wakuNode, logger)
-		}()
+		}(node, messageHashes)
 	}
 	wg.Wait()
 
@@ -163,12 +178,12 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 			}
 		}
 
-		err := dbStore.RecordMessage(tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, missingIn, "does_not_exist")
+		err := dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, missingIn, "does_not_exist")
 		if err != nil {
 			return err
 		}
 
-		err = dbStore.RecordMessage(tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
+		err = dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
 		if err != nil {
 			return err
 		}

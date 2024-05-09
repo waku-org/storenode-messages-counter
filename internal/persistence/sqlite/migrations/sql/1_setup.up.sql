@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS syncTopicStatus (
 
 
 CREATE TABLE IF NOT EXISTS missingMessages (
+	runId VARCHAR NOT NULL,
 	clusterId INTEGER NOT NULL,
 	pubsubTopic VARCHAR NOT NULL,
 	messageHash VARCHAR NOT NULL,
@@ -18,3 +19,4 @@ CREATE TABLE IF NOT EXISTS missingMessages (
 ) WITHOUT ROWID;
 
 CREATE INDEX IF NOT EXISTS idxMsg1 ON missingMessages(storedAt DESC);
+CREATE INDEX IF NOT EXISTS idxMsg2 ON missingMessages(runId);
