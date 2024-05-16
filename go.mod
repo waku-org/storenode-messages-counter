@@ -15,7 +15,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.2
 	github.com/waku-org/go-waku v0.8.1-0.20240516225512-05d247d27213
 	go.uber.org/zap v1.27.0
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
