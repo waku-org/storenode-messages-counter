@@ -15,10 +15,11 @@ func main() {
 	options.LogEncoding = "console"
 
 	app := &cli.App{
-		Name:    "storenode-messages",
-		Version: "0.0.1",
-		Before:  altsrc.InitInputSourceWithContext(cliFlags, altsrc.NewTomlSourceFromFlagFunc("config-file")),
-		Flags:   cliFlags,
+		Name:        "storenode-messages",
+		Description: "storenode message counter",
+		Version:     "0.0.1",
+		Before:      altsrc.InitInputSourceWithContext(cliFlags, altsrc.NewTomlSourceFromFlagFunc("config-file")),
+		Flags:       cliFlags,
 		Action: func(c *cli.Context) error {
 			return Execute(c.Context, options)
 		},

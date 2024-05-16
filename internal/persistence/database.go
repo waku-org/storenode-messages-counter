@@ -11,9 +11,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// WALMode for sqlite.
-const WALMode = "wal"
-
 // DBStore is a MessageProvider that has a *sql.DB connection
 type DBStore struct {
 	db          *sql.DB
@@ -130,15 +127,14 @@ func (d *DBStore) Start(ctx context.Context, timesource timesource.Timesource) e
 }
 
 func (d *DBStore) cleanOlderRecords(ctx context.Context) error {
-	d.log.Debug("Cleaning older records...")
+	d.log.Debug("cleaning older records...")
 
-	deleteFrom := time.Now().Add(-14 * 24 * time.Hour)
-	_, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < ?", deleteFrom)
+	deleteFrom := time.Now().Add(-14 * 24 * time.Hour).UnixNano()
+	_, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < $1", deleteFrom)
 	if err != nil {
 		return err
 	}
-
-	d.log.Debug("Older records removed")
+	d.log.Debug("older records removed")
 
 	return nil
 }
@@ -183,7 +179,7 @@ func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsub
 		result[topic] = nil
 	}
 
-	sqlQuery := `SELECT pubsubTopic, lastSyncTimestamp FROM syncTopicStatus WHERE clusterId = ?`
+	sqlQuery := `SELECT pubsubTopic, lastSyncTimestamp FROM syncTopicStatus WHERE clusterId = $1`
 	rows, err := d.db.QueryContext(ctx, sqlQuery, clusterID)
 	if err != nil {
 		return nil, err
@@ -199,7 +195,11 @@ func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsub
 
 		if lastSyncTimestamp != 0 {
 			t := time.Unix(0, lastSyncTimestamp)
-			result[pubsubTopic] = &t
+			// Only sync those topics we received in flags
+			_, ok := result[pubsubTopic]
+			if ok {
+				result[pubsubTopic] = &t
+			}
 		}
 	}
 	defer rows.Close()
@@ -208,12 +208,12 @@ func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsub
 }
 
 func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string, lastSyncTimestamp time.Time) error {
-	stmt, err := tx.Prepare("INSERT INTO syncTopicStatus(clusterId, pubsubTopic, lastSyncTimestamp) VALUES (?, ?, ?) ON CONFLICT(clusterId, pubsubTopic) DO UPDATE SET lastSyncTimestamp = ?")
+	stmt, err := tx.Prepare("INSERT INTO syncTopicStatus(clusterId, pubsubTopic, lastSyncTimestamp) VALUES ($1, $2, $3) ON CONFLICT(clusterId, pubsubTopic) DO UPDATE SET lastSyncTimestamp = $4")
 	if err != nil {
 		return err
 	}
 
-	_, err = stmt.Exec(clusterID, topic, lastSyncTimestamp.UnixNano())
+	_, err = stmt.Exec(clusterID, topic, lastSyncTimestamp.UnixNano(), lastSyncTimestamp.UnixNano())
 	if err != nil {
 		return err
 	}
@@ -222,12 +222,16 @@ func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string,
 }
 
 func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []string, status string) error {
-	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, clusterId, pubsubTopic, messageHash, msgTimestamp, storenode, status, storedAt) VALUES (?, ?, ?, ?, ?, ?, ?)")
+	if len(storenodes) == 0 {
+		return nil
+	}
+
+	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, clusterId, pubsubTopic, messageHash, msgTimestamp, storenode, msgStatus, storedAt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
 	if err != nil {
 		return err
 	}
 
-	now := time.Now().Unix()
+	now := time.Now().UnixNano()
 	for _, s := range storenodes {
 		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, s, status, now)
 		if err != nil {

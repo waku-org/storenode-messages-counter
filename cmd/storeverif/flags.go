@@ -22,7 +22,7 @@ var cliFlags = []cli.Flag{
 		Name:        "cluster-id",
 		Usage:       "ClusterID to use",
 		Destination: &options.ClusterID,
-		Required:    true,
+		Value:       0,
 		EnvVars:     []string{"MSGVERIF_CLUSTER_ID"},
 	}),
 	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{

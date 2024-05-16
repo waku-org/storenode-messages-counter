@@ -35,7 +35,7 @@ func migrateDB(db *sql.DB, resources *bindata.AssetSource, driver database.Drive
 	m, err := migrate.NewWithInstance(
 		"go-bindata",
 		source,
-		"gowakudb",
+		"messageverif",
 		driver)
 	if err != nil {
 		return err

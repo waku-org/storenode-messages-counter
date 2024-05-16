@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/waku-org/storenode-messages/internal/persistence/postgres"
 	"github.com/waku-org/storenode-messages/internal/persistence/sqlite"
 	"go.uber.org/zap"
 )
@@ -45,6 +46,9 @@ func ParseURL(databaseURL string, logger *zap.Logger) (*sql.DB, func(*sql.DB, *z
 	case "sqlite3":
 		db, err = sqlite.NewDB(dbParams, logger)
 		migrationFn = sqlite.Migrations
+	case "postgres", "postgresql":
+		db, err = postgres.NewDB(dbURL, logger)
+		migrationFn = postgres.Migrations
 	default:
 		err = errors.New("unsupported database engine")
 	}
