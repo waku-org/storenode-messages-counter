@@ -204,7 +204,7 @@ func retrieveHistory(ctx context.Context, topic string, lastSyncTimestamp *time.
 	now := wakuNode.Timesource().Now()
 
 	// Query is done with a delay
-	startTime := now.Add(-(timeInterval + 5*time.Minute))
+	startTime := now.Add(-(timeInterval + delay))
 	if lastSyncTimestamp != nil {
 		startTime = *lastSyncTimestamp
 	}
