@@ -13,8 +13,9 @@ import (
 
 // DBStore is a MessageProvider that has a *sql.DB connection
 type DBStore struct {
-	db          *sql.DB
-	migrationFn func(db *sql.DB, logger *zap.Logger) error
+	db              *sql.DB
+	migrationFn     func(db *sql.DB, logger *zap.Logger) error
+	retentionPolicy time.Duration
 
 	timesource timesource.Timesource
 	log        *zap.Logger
@@ -32,6 +33,13 @@ type DBOption func(*DBStore) error
 func WithDB(db *sql.DB) DBOption {
 	return func(d *DBStore) error {
 		d.db = db
+		return nil
+	}
+}
+
+func WithRetentionPolicy(duration time.Duration) DBOption {
+	return func(d *DBStore) error {
+		d.retentionPolicy = duration
 		return nil
 	}
 }
@@ -115,6 +123,8 @@ func (d *DBStore) Start(ctx context.Context, timesource timesource.Timesource) e
 	d.cancel = cancel
 	d.timesource = timesource
 
+	d.log.Info("Using db retention policy", zap.String("duration", d.retentionPolicy.String()))
+
 	err := d.cleanOlderRecords(ctx)
 	if err != nil {
 		return err
@@ -129,7 +139,7 @@ func (d *DBStore) Start(ctx context.Context, timesource timesource.Timesource) e
 func (d *DBStore) cleanOlderRecords(ctx context.Context) error {
 	d.log.Debug("cleaning older records...")
 
-	deleteFrom := time.Now().Add(-14 * 24 * time.Hour).UnixNano()
+	deleteFrom := time.Now().Add(d.retentionPolicy).UnixNano()
 	_, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < $1", deleteFrom)
 	if err != nil {
 		return err

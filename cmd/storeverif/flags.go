@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	cli "github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
 	"github.com/waku-org/go-waku/waku/cliutils"
@@ -39,6 +41,13 @@ var cliFlags = []cli.Flag{
 		Value:       "sqlite3://storage.db",
 		Destination: &options.DatabaseURL,
 		EnvVars:     []string{"MSG_VERIF_DB_URL"},
+	}),
+	altsrc.NewDurationFlag(&cli.DurationFlag{
+		Name:        "retention-policy",
+		Usage:       "Retention policy. ",
+		Destination: &options.RetentionPolicy,
+		Value:       15 * 24 * time.Hour,
+		EnvVars:     []string{"MSGVERIF_RETENTION_POLICY"},
 	}),
 	cliutils.NewGenericFlagSingleValue(&cli.GenericFlag{
 		Name:    "log-level",
