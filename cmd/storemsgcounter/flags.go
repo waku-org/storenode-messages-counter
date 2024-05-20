@@ -12,20 +12,32 @@ import (
 var cliFlags = []cli.Flag{
 	&cli.StringFlag{Name: "config-file", Usage: "loads configuration from a TOML file (cmd-line parameters take precedence)"},
 	cliutils.NewGenericFlagMultiValue(&cli.GenericFlag{
-		Name:     "storenode",
-		Required: true,
-		Usage:    "Multiaddr of peers that supports storeV3 protocol. Option may be repeated",
+		Name:  "storenode",
+		Usage: "Multiaddr of peers that supports storeV3 protocol. Option may be repeated",
 		Value: &cliutils.MultiaddrSlice{
 			Values: &options.StoreNodes,
 		},
-		EnvVars: []string{"MSGVERIF_STORENODE"},
+		EnvVars: []string{"STORE_MSG_CTR_STORENODE"},
+	}),
+	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{
+		Name:        "dns-discovery-url",
+		Usage:       "URL for DNS node list in format 'enrtree://<key>@<fqdn>'. Option may be repeated",
+		Destination: &options.DNSDiscoveryURLs,
+		EnvVars:     []string{"STORE_MSG_CTR_DNS_DISC_URL"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:        "dns-discovery-name-server",
+		Aliases:     []string{"dns-discovery-nameserver"},
+		Usage:       "DNS nameserver IP to query (empty to use system's default)",
+		Destination: &options.DNSDiscoveryNameserver,
+		EnvVars:     []string{"STORE_MSG_CTR_DNS_DISC_NAMESERVER"},
 	}),
 	altsrc.NewUintFlag(&cli.UintFlag{
 		Name:        "cluster-id",
 		Usage:       "ClusterID to use",
 		Destination: &options.ClusterID,
 		Value:       0,
-		EnvVars:     []string{"MSGVERIF_CLUSTER_ID"},
+		EnvVars:     []string{"STORE_MSG_CTR_CLUSTER_ID"},
 	}),
 	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{
 		Name:        "pubsub-topic",
@@ -33,7 +45,7 @@ var cliFlags = []cli.Flag{
 		Usage:       "Pubsub topic used for the query. Argument may be repeated.",
 		Value:       cli.NewStringSlice(relay.DefaultWakuTopic),
 		Destination: &options.PubSubTopics,
-		EnvVars:     []string{"MSGVERIF_PUBSUB_TOPICS"},
+		EnvVars:     []string{"STORE_MSG_CTR_PUBSUB_TOPICS"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:        "db-url",
@@ -47,7 +59,7 @@ var cliFlags = []cli.Flag{
 		Usage:       "Retention policy. ",
 		Destination: &options.RetentionPolicy,
 		Value:       15 * 24 * time.Hour,
-		EnvVars:     []string{"MSGVERIF_RETENTION_POLICY"},
+		EnvVars:     []string{"STORE_MSG_CTR_RETENTION_POLICY"},
 	}),
 	cliutils.NewGenericFlagSingleValue(&cli.GenericFlag{
 		Name:    "log-level",
@@ -57,7 +69,7 @@ var cliFlags = []cli.Flag{
 			Value:   &options.LogLevel,
 		},
 		Usage:   "Define the logging level (allowed values: DEBUG, INFO, WARN, ERROR, DPANIC, PANIC, FATAL)",
-		EnvVars: []string{"MSGVERIF_LOG_LEVEL"},
+		EnvVars: []string{"STORE_MSG_CTR_LOG_LEVEL"},
 	}),
 	cliutils.NewGenericFlagSingleValue(&cli.GenericFlag{
 		Name:  "log-encoding",
@@ -66,13 +78,13 @@ var cliFlags = []cli.Flag{
 			Choices: []string{"console", "nocolor", "json"},
 			Value:   &options.LogEncoding,
 		},
-		EnvVars: []string{"MSGVERIF_LOG_ENCODING"},
+		EnvVars: []string{"STORE_MSG_CTR_LOG_ENCODING"},
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:        "log-output",
 		Value:       "stdout",
 		Usage:       "specifies where logging output should be written  (stdout, file, file:./filename.log)",
 		Destination: &options.LogOutput,
-		EnvVars:     []string{"MSGVERIF_LOG_OUTPUT"},
+		EnvVars:     []string{"STORE_MSG_CTR_LOG_OUTPUT"},
 	}),
 }

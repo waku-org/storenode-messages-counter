@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
 	"github.com/waku-org/go-waku/waku/v2/timesource"
 	"go.uber.org/zap"
@@ -238,7 +239,7 @@ func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string,
 	return stmt.Close()
 }
 
-func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []string, status string) error {
+func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []peer.AddrInfo, status string) error {
 	if len(storenodes) == 0 {
 		return nil
 	}
@@ -251,7 +252,7 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 
 	now := time.Now().UnixNano()
 	for _, s := range storenodes {
-		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, s, status, now)
+		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, s.Addrs[0].String(), status, now)
 		if err != nil {
 			return err
 		}
@@ -260,7 +261,7 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 	return nil
 }
 
-func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode string) error {
+func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode peer.AddrInfo) error {
 	stmt, err := d.db.Prepare("INSERT INTO storeNodeUnavailable(runId, storenode, requestTime) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return err
@@ -268,7 +269,7 @@ func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode string) erro
 	defer stmt.Close()
 
 	now := time.Now().UnixNano()
-	_, err = stmt.Exec(uuid, storenode, now)
+	_, err = stmt.Exec(uuid, storenode.Addrs[0].String(), now)
 	if err != nil {
 		return err
 	}

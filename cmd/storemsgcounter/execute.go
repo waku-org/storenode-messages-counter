@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/google/uuid"
-	"github.com/multiformats/go-multiaddr"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
+	"github.com/waku-org/go-waku/waku/v2/dnsdisc"
 	"github.com/waku-org/go-waku/waku/v2/node"
 	"github.com/waku-org/go-waku/waku/v2/protocol"
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
@@ -56,6 +59,32 @@ func Execute(ctx context.Context, options Options) error {
 	}
 	defer dbStore.Stop()
 
+	var discoveredNodes []dnsdisc.DiscoveredNode
+	if len(options.DNSDiscoveryURLs.Value()) != 0 {
+		discoveredNodes = node.GetNodesFromDNSDiscovery(logger, ctx, options.DNSDiscoveryNameserver, options.DNSDiscoveryURLs.Value())
+	}
+
+	var storenodes []peer.AddrInfo
+	for _, node := range discoveredNodes {
+		if len(node.PeerInfo.Addrs) == 0 {
+			continue
+		}
+		storenodes = append(storenodes, node.PeerInfo)
+	}
+
+	for _, node := range options.StoreNodes {
+		pInfo, err := peer.AddrInfosFromP2pAddrs(node)
+		if err != nil {
+			return err
+		}
+
+		storenodes = append(storenodes, pInfo...)
+	}
+
+	if len(storenodes) == 0 {
+		return errors.New("no storenodes specified")
+	}
+
 	wakuNode, err := node.New(
 		node.WithNTP(),
 		node.WithClusterID(uint16(options.ClusterID)),
@@ -68,6 +97,10 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 	defer wakuNode.Stop()
+
+	for _, s := range storenodes {
+		wakuNode.Host().Peerstore().AddAddrs(s.ID, s.Addrs, peerstore.PermanentAddrTTL)
+	}
 
 	err = dbStore.Start(ctx, wakuNode.Timesource())
 	if err != nil {
@@ -82,7 +115,7 @@ func Execute(ctx context.Context, options Options) error {
 			return nil
 		case <-timer.C:
 			logger.Info("verifying message history...")
-			err := verifyHistory(ctx, wakuNode, dbStore, logger)
+			err := verifyHistory(ctx, storenodes, wakuNode, dbStore, logger)
 			if err != nil {
 				return err
 			}
@@ -94,17 +127,17 @@ func Execute(ctx context.Context, options Options) error {
 }
 
 var msgMapLock sync.Mutex
-var msgMap map[pb.MessageHash]map[string]MessageExistence
+var msgMap map[pb.MessageHash]map[peer.ID]MessageExistence
 var msgAttr map[pb.MessageHash]MessageAttr
 
-func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
+func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
 	runId := uuid.New().String()
 
 	logger = logger.With(zap.String("runId", runId))
 
 	// [MessageHash][StoreNode] = exists?
 	msgMapLock.Lock()
-	msgMap = make(map[pb.MessageHash]map[string]MessageExistence)
+	msgMap = make(map[pb.MessageHash]map[peer.ID]MessageExistence)
 	msgAttr = make(map[pb.MessageHash]MessageAttr)
 	msgMapLock.Unlock()
 
@@ -132,7 +165,7 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 		wg.Add(1)
 		go func(topic string, lastSyncTimestamp *time.Time) {
 			defer wg.Done()
-			retrieveHistory(ctx, runId, topic, lastSyncTimestamp, wakuNode, dbStore, tx, logger)
+			retrieveHistory(ctx, runId, storenodes, topic, lastSyncTimestamp, wakuNode, dbStore, tx, logger)
 		}(topic, lastSyncTimestamp)
 	}
 	wg.Wait()
@@ -140,26 +173,24 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 	// Verify for each storenode which messages are not available, and query
 	// for their existence using message hash
 	// ========================================================================
-	msgsToVerify := make(map[string][]pb.MessageHash) // storenode -> msgHash
+	msgsToVerify := make(map[peer.ID][]pb.MessageHash) // storenode -> msgHash
 	msgMapLock.Lock()
 	for msgHash, nodes := range msgMap {
-		for _, node := range options.StoreNodes {
-			nodeStr := node.String()
-			if nodes[nodeStr] != Exists {
-				msgsToVerify[nodeStr] = append(msgsToVerify[nodeStr], msgHash)
+		for _, node := range storenodes {
+			if nodes[node.ID] != Exists {
+				msgsToVerify[node.ID] = append(msgsToVerify[node.ID], msgHash)
 			}
 		}
 	}
 	msgMapLock.Unlock()
 
 	wg = sync.WaitGroup{}
-	for node, messageHashes := range msgsToVerify {
+	for peerID, messageHashes := range msgsToVerify {
 		wg.Add(1)
-		go func(node string, messageHashes []pb.MessageHash) {
+		go func(peerID peer.ID, messageHashes []pb.MessageHash) {
 			defer wg.Done()
-			nodeMultiaddr, _ := multiaddr.NewMultiaddr(node)
-			verifyMessageExistence(ctx, runId, tx, nodeMultiaddr, messageHashes, wakuNode, dbStore, logger)
-		}(node, messageHashes)
+			verifyMessageExistence(ctx, runId, tx, peerID, messageHashes, wakuNode, dbStore, logger)
+		}(peerID, messageHashes)
 	}
 	wg.Wait()
 
@@ -169,14 +200,13 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 	msgMapLock.Lock()
 	defer msgMapLock.Unlock()
 	for msgHash, nodes := range msgMap {
-		var missingIn []string
-		var unknownIn []string
-		for _, node := range options.StoreNodes {
-			nodeStr := node.String()
-			if nodes[nodeStr] == DoesNotExist {
-				missingIn = append(missingIn, nodeStr)
-			} else if nodes[nodeStr] == Unknown {
-				unknownIn = append(unknownIn, nodeStr)
+		var missingIn []peer.AddrInfo
+		var unknownIn []peer.AddrInfo
+		for _, node := range storenodes {
+			if nodes[node.ID] == DoesNotExist {
+				missingIn = append(missingIn, node)
+			} else if nodes[node.ID] == Unknown {
+				unknownIn = append(unknownIn, node)
 			}
 		}
 
@@ -198,7 +228,7 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 	return nil
 }
 
-func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTimestamp *time.Time, wakuNode *node.WakuNode, dbStore *persistence.DBStore, tx *sql.Tx, logger *zap.Logger) {
+func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo, topic string, lastSyncTimestamp *time.Time, wakuNode *node.WakuNode, dbStore *persistence.DBStore, tx *sql.Tx, logger *zap.Logger) {
 	logger = logger.With(zap.String("topic", topic), zap.Timep("lastSyncTimestamp", lastSyncTimestamp))
 
 	now := wakuNode.Timesource().Now()
@@ -216,7 +246,7 @@ func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTi
 	}
 
 	// Determine if the messages exist across all nodes
-	for _, node := range options.StoreNodes {
+	for _, node := range storenodes {
 		storeNodeFailure := false
 		var result *store.Result
 		var err error
@@ -229,7 +259,7 @@ func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTi
 				ContentFilter: protocol.NewContentFilter(topic),
 				TimeStart:     proto.Int64(startTime.UnixNano()),
 				TimeEnd:       proto.Int64(endTime.UnixNano()),
-			}, store.WithPeerAddr(node))
+			}, store.WithPeer(node.ID))
 			if err != nil {
 				logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
 				storeNodeFailure = true
@@ -243,9 +273,9 @@ func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTi
 
 		if storeNodeFailure {
 			logger.Error("storenode not available", zap.Stringer("storenode", node), zap.Time("startTime", startTime), zap.Time("endTime", endTime))
-			err := dbStore.RecordStorenodeUnavailable(runId, node.String())
+			err := dbStore.RecordStorenodeUnavailable(runId, node)
 			if err != nil {
-				logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", node))
+				logger.Error("could not store node unavailable", zap.Error(err), zap.Stringer("storenode", node))
 			}
 
 		} else {
@@ -257,9 +287,9 @@ func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTi
 					hash := mkv.WakuMessageHash()
 					_, ok := msgMap[hash]
 					if !ok {
-						msgMap[hash] = make(map[string]MessageExistence)
+						msgMap[hash] = make(map[peer.ID]MessageExistence)
 					}
-					msgMap[hash][node.String()] = Exists
+					msgMap[hash][node.ID] = Exists
 					msgAttr[hash] = MessageAttr{
 						Timestamp:   uint64(mkv.Message.GetTimestamp()),
 						PubsubTopic: mkv.GetPubsubTopic(),
@@ -283,13 +313,17 @@ func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTi
 				}
 
 				if storeNodeFailure {
-					// TODO: Notify that storenode was not available from X to Y time
 					logger.Error("storenode not available",
 						zap.Stringer("storenode", node),
 						zap.Time("startTime", startTime),
 						zap.Time("endTime", endTime),
 						zap.String("topic", topic),
 						zap.String("cursor", hexutil.Encode(result.Cursor())))
+
+					err := dbStore.RecordStorenodeUnavailable(runId, node)
+					if err != nil {
+						logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", node))
+					}
 					break iteratorLbl
 				}
 			}
@@ -303,16 +337,18 @@ func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTi
 	}
 }
 
-func verifyMessageExistence(ctx context.Context, runId string, tx *sql.Tx, nodeAddr multiaddr.Multiaddr, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) {
+func verifyMessageExistence(ctx context.Context, runId string, tx *sql.Tx, peerID peer.ID, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) {
 	storeNodeFailure := false
 	var result *store.Result
 	var err error
 
+	peerInfo := wakuNode.Host().Peerstore().PeerInfo(peerID)
+
 queryLbl:
 	for i := 0; i < maxAttempts; i++ {
-		result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeerAddr(nodeAddr))
+		result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID))
 		if err != nil {
-			logger.Error("could not query storenode", zap.Stringer("storenode", nodeAddr), zap.Error(err))
+			logger.Error("could not query storenode", zap.Stringer("storenode", peerInfo), zap.Error(err))
 			storeNodeFailure = true
 			time.Sleep(2 * time.Second)
 		} else {
@@ -323,30 +359,28 @@ queryLbl:
 
 	if storeNodeFailure {
 		logger.Error("storenode not available",
-			zap.Stringer("storenode", nodeAddr),
+			zap.Stringer("storenode", peerInfo),
 			zap.Stringers("hashes", messageHashes))
 
-		err := dbStore.RecordStorenodeUnavailable(runId, nodeAddr.String())
+		err := dbStore.RecordStorenodeUnavailable(runId, peerInfo)
 		if err != nil {
-			logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", nodeAddr))
+			logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", peerInfo))
 		}
 	} else {
 		for !result.IsComplete() {
-			nodeAddrStr := nodeAddr.String()
-
 			msgMapLock.Lock()
 			for _, mkv := range result.Messages() {
 				hash := mkv.WakuMessageHash()
 				_, ok := msgMap[hash]
 				if !ok {
-					msgMap[hash] = make(map[string]MessageExistence)
+					msgMap[hash] = make(map[peer.ID]MessageExistence)
 				}
-				msgMap[hash][nodeAddrStr] = Exists
+				msgMap[hash][peerInfo.ID] = Exists
 			}
 
 			for _, msgHash := range messageHashes {
-				if msgMap[msgHash][nodeAddrStr] != Exists {
-					msgMap[msgHash][nodeAddrStr] = DoesNotExist
+				if msgMap[msgHash][peerInfo.ID] != Exists {
+					msgMap[msgHash][peerInfo.ID] = DoesNotExist
 				}
 			}
 
@@ -358,7 +392,7 @@ queryLbl:
 			for i := 0; i < maxAttempts; i++ {
 				err = result.Next(ctx)
 				if err != nil {
-					logger.Error("could not query storenode", zap.Stringer("storenode", nodeAddr), zap.Error(err))
+					logger.Error("could not query storenode", zap.Stringer("storenode", peerInfo), zap.Error(err))
 					storeNodeFailure = true
 					time.Sleep(2 * time.Second)
 				} else {
@@ -369,13 +403,13 @@ queryLbl:
 
 			if storeNodeFailure {
 				logger.Error("storenode not available",
-					zap.Stringer("storenode", nodeAddr),
+					zap.Stringer("storenode", peerInfo),
 					zap.Stringers("hashes", messageHashes),
 					zap.String("cursor", hexutil.Encode(result.Cursor())))
 
-				err := dbStore.RecordStorenodeUnavailable(runId, nodeAddr.String())
+				err := dbStore.RecordStorenodeUnavailable(runId, peerInfo)
 				if err != nil {
-					logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", nodeAddr))
+					logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", peerInfo))
 				}
 			}
 
