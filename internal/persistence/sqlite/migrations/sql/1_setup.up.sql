@@ -20,3 +20,12 @@ CREATE TABLE IF NOT EXISTS missingMessages (
 
 CREATE INDEX IF NOT EXISTS idxMsg1 ON missingMessages(storedAt DESC);
 CREATE INDEX IF NOT EXISTS idxMsg2 ON missingMessages(runId);
+
+CREATE TABLE IF NOT EXISTS storeNodeUnavailable (
+	runId VARCHAR NOT NULL,
+	storenode VARCHAR NOT NULL,
+	requestTime INTEGER NOT NULL, 
+	PRIMARY KEY (runId, storenode)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS idxStr1 ON storeNodeUnavailable(requestTime);

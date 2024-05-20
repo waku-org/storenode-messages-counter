@@ -15,7 +15,7 @@ LABEL maintainer="richard@status.im"
 LABEL source="https://github.com/waku-org/storenode-messages"
 LABEL description="Storenode message count verifier"
 
-COPY --from=builder /go/src/github.com/waku-org/storenode-messages/build/storeverif /usr/local/bin/storeverif
+COPY --from=builder /go/src/github.com/waku-org/storenode-messages/build/storemsgcounter /usr/local/bin/storemsgcounter
 
-ENTRYPOINT ["/usr/local/bin/storeverif"]
+ENTRYPOINT ["/usr/local/bin/storemsgcounter"]
 CMD ["-help"]

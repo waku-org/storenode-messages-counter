@@ -4,7 +4,7 @@
 all: build
 
 build:
-	go build -tags=gowaku_no_rln -o build/storeverif ./cmd/storeverif
+	go build -tags=gowaku_no_rln -o build/storemsgcounter ./cmd/storemsgcounter
 	go build -tags=gowaku_no_rln -o build/populatedb ./cmd/populatedb
 
 

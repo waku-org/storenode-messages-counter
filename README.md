@@ -13,7 +13,7 @@ You need to setup a postgres db as such:
 
 Then you can run the program with
 ```
-./build/storeverif --storenode=some_multiaddress --storenode=some_multiaddress  --pubsub-topic=some_pubsubtopic --cluster-id=16 --db-url=postgres://user:password@127.0.0.1:5432/telemetry
+./build/storemsgcounter --storenode=some_multiaddress --storenode=some_multiaddress  --pubsub-topic=some_pubsubtopic --cluster-id=16 --db-url=postgres://user:password@127.0.0.1:5432/telemetry
 ```
 
 A dockerfile is also available for ease of setup

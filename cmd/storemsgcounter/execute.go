@@ -50,7 +50,7 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 
-	dbStore, err := persistence.NewDBStore(logger, persistence.WithDB(db), persistence.WithMigrations(migrationFn))
+	dbStore, err := persistence.NewDBStore(logger, persistence.WithDB(db), persistence.WithMigrations(migrationFn), persistence.WithRetentionPolicy(options.RetentionPolicy))
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 		wg.Add(1)
 		go func(topic string, lastSyncTimestamp *time.Time) {
 			defer wg.Done()
-			retrieveHistory(ctx, topic, lastSyncTimestamp, wakuNode, dbStore, tx, logger)
+			retrieveHistory(ctx, runId, topic, lastSyncTimestamp, wakuNode, dbStore, tx, logger)
 		}(topic, lastSyncTimestamp)
 	}
 	wg.Wait()
@@ -158,7 +158,7 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 		go func(node string, messageHashes []pb.MessageHash) {
 			defer wg.Done()
 			nodeMultiaddr, _ := multiaddr.NewMultiaddr(node)
-			verifyMessageExistence(ctx, nodeMultiaddr, messageHashes, wakuNode, logger)
+			verifyMessageExistence(ctx, runId, tx, nodeMultiaddr, messageHashes, wakuNode, dbStore, logger)
 		}(node, messageHashes)
 	}
 	wg.Wait()
@@ -198,7 +198,7 @@ func verifyHistory(ctx context.Context, wakuNode *node.WakuNode, dbStore *persis
 	return nil
 }
 
-func retrieveHistory(ctx context.Context, topic string, lastSyncTimestamp *time.Time, wakuNode *node.WakuNode, dbStore *persistence.DBStore, tx *sql.Tx, logger *zap.Logger) {
+func retrieveHistory(ctx context.Context, runId string, topic string, lastSyncTimestamp *time.Time, wakuNode *node.WakuNode, dbStore *persistence.DBStore, tx *sql.Tx, logger *zap.Logger) {
 	logger = logger.With(zap.String("topic", topic), zap.Timep("lastSyncTimestamp", lastSyncTimestamp))
 
 	now := wakuNode.Timesource().Now()
@@ -242,8 +242,12 @@ func retrieveHistory(ctx context.Context, topic string, lastSyncTimestamp *time.
 		}
 
 		if storeNodeFailure {
-			// TODO: Notify that storenode was not available from X to Y time
 			logger.Error("storenode not available", zap.Stringer("storenode", node), zap.Time("startTime", startTime), zap.Time("endTime", endTime))
+			err := dbStore.RecordStorenodeUnavailable(runId, node.String())
+			if err != nil {
+				logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", node))
+			}
+
 		} else {
 
 		iteratorLbl:
@@ -299,7 +303,7 @@ func retrieveHistory(ctx context.Context, topic string, lastSyncTimestamp *time.
 	}
 }
 
-func verifyMessageExistence(ctx context.Context, nodeAddr multiaddr.Multiaddr, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, logger *zap.Logger) {
+func verifyMessageExistence(ctx context.Context, runId string, tx *sql.Tx, nodeAddr multiaddr.Multiaddr, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) {
 	storeNodeFailure := false
 	var result *store.Result
 	var err error
@@ -318,10 +322,14 @@ queryLbl:
 	}
 
 	if storeNodeFailure {
-		// TODO: Notify that storenode was not available from X to Y time
 		logger.Error("storenode not available",
 			zap.Stringer("storenode", nodeAddr),
 			zap.Stringers("hashes", messageHashes))
+
+		err := dbStore.RecordStorenodeUnavailable(runId, nodeAddr.String())
+		if err != nil {
+			logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", nodeAddr))
+		}
 	} else {
 		for !result.IsComplete() {
 			nodeAddrStr := nodeAddr.String()
@@ -360,11 +368,15 @@ queryLbl:
 			}
 
 			if storeNodeFailure {
-				// TODO: Notify that storenode was not available from X to Y time
 				logger.Error("storenode not available",
 					zap.Stringer("storenode", nodeAddr),
 					zap.Stringers("hashes", messageHashes),
 					zap.String("cursor", hexutil.Encode(result.Cursor())))
+
+				err := dbStore.RecordStorenodeUnavailable(runId, nodeAddr.String())
+				if err != nil {
+					logger.Error("could not store recordnode unavailable", zap.Error(err), zap.Stringer("storenode", nodeAddr))
+				}
 			}
 
 		}

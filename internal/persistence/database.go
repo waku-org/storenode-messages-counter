@@ -140,10 +140,17 @@ func (d *DBStore) cleanOlderRecords(ctx context.Context) error {
 	d.log.Debug("cleaning older records...")
 
 	deleteFrom := time.Now().Add(d.retentionPolicy).UnixNano()
+
 	_, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < $1", deleteFrom)
 	if err != nil {
 		return err
 	}
+
+	_, err = d.db.ExecContext(ctx, "DELETE FROM storeNodeUnavailable WHERE requestTime < $1", deleteFrom)
+	if err != nil {
+		return err
+	}
+
 	d.log.Debug("older records removed")
 
 	return nil
@@ -240,6 +247,7 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 	if err != nil {
 		return err
 	}
+	defer stmt.Close()
 
 	now := time.Now().UnixNano()
 	for _, s := range storenodes {
@@ -249,5 +257,21 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 		}
 	}
 
-	return stmt.Close()
+	return nil
+}
+
+func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode string) error {
+	stmt, err := d.db.Prepare("INSERT INTO storeNodeUnavailable(runId, storenode, requestTime) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	now := time.Now().UnixNano()
+	_, err = stmt.Exec(uuid, storenode, now)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

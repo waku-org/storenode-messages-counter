@@ -1,4 +1,4 @@
 storage.db
 storage.db-shm
 storage.db-wal
-./storeverif
+./storemsgcounter
