@@ -14,6 +14,7 @@ FROM debian:12.5-slim
 LABEL maintainer="richard@status.im"
 LABEL source="https://github.com/waku-org/storenode-messages"
 LABEL description="Storenode message count verifier"
+LABEL commit="unknown"
 
 COPY --from=builder /go/src/github.com/waku-org/storenode-messages/build/storemsgcounter /usr/local/bin/storemsgcounter
 
