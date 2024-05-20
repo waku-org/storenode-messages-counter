@@ -27,7 +27,6 @@ var cliFlags = []cli.Flag{
 	}),
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:        "dns-discovery-name-server",
-		Aliases:     []string{"dns-discovery-nameserver"},
 		Usage:       "DNS nameserver IP to query (empty to use system's default)",
 		Destination: &options.DNSDiscoveryNameserver,
 		EnvVars:     []string{"STORE_MSG_CTR_DNS_DISC_NAMESERVER"},

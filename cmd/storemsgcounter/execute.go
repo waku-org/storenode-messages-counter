@@ -199,6 +199,7 @@ func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *no
 	// ========================================================================
 	msgMapLock.Lock()
 	defer msgMapLock.Unlock()
+
 	for msgHash, nodes := range msgMap {
 		var missingIn []peer.AddrInfo
 		var unknownIn []peer.AddrInfo
@@ -210,14 +211,20 @@ func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *no
 			}
 		}
 
-		err := dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, missingIn, "does_not_exist")
-		if err != nil {
-			return err
+		if len(missingIn) != 0 {
+			logger.Info("missing message identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgAttr[msgHash].PubsubTopic), zap.Int("num_nodes", len(missingIn)))
+			err := dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, missingIn, "does_not_exist")
+			if err != nil {
+				return err
+			}
 		}
 
-		err = dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
-		if err != nil {
-			return err
+		if len(unknownIn) != 0 {
+			logger.Debug("message with unknown state identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgAttr[msgHash].PubsubTopic), zap.Int("num_nodes", len(missingIn)))
+			err = dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
+			if err != nil {
+				return err
+			}
 		}
 	}
 
