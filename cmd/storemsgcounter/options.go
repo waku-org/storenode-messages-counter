@@ -8,6 +8,8 @@ import (
 )
 
 type Options struct {
+	Port                   int
+	Address                string
 	LogLevel               string
 	LogEncoding            string
 	LogOutput              string

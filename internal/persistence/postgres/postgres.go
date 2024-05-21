@@ -23,7 +23,7 @@ func NewDB(dburl string, logger *zap.Logger) (*sql.DB, error) {
 
 func migrationDriver(db *sql.DB) (database.Driver, error) {
 	return pgx.WithInstance(db, &pgx.Config{
-		MigrationsTable: pgx.DefaultMigrationsTable,
+		MigrationsTable: "message_counter_" + pgx.DefaultMigrationsTable,
 	})
 }
 

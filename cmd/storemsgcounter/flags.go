@@ -10,6 +10,22 @@ import (
 )
 
 var cliFlags = []cli.Flag{
+	altsrc.NewIntFlag(&cli.IntFlag{
+		Name:        "tcp-port",
+		Aliases:     []string{"port", "p"},
+		Value:       0,
+		Usage:       "Libp2p TCP listening port (0 for random)",
+		Destination: &options.Port,
+		EnvVars:     []string{"STORE_MSG_CTR_TCP_PORT"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:        "address",
+		Aliases:     []string{"host", "listen-address"},
+		Value:       "0.0.0.0",
+		Usage:       "Listening address",
+		Destination: &options.Address,
+		EnvVars:     []string{"STORE_MSG_CTR_ADDRESS"},
+	}),
 	&cli.StringFlag{Name: "config-file", Usage: "loads configuration from a TOML file (cmd-line parameters take precedence)"},
 	cliutils.NewGenericFlagMultiValue(&cli.GenericFlag{
 		Name:  "storenode",

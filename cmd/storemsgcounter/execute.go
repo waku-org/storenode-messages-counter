@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"net"
 	"sync"
 	"time"
 
@@ -85,9 +87,15 @@ func Execute(ctx context.Context, options Options) error {
 		return errors.New("no storenodes specified")
 	}
 
+	hostAddr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", options.Address, options.Port))
+	if err != nil {
+		return err
+	}
+
 	wakuNode, err := node.New(
 		node.WithNTP(),
 		node.WithClusterID(uint16(options.ClusterID)),
+		node.WithHostAddress(hostAddr),
 	)
 	if err != nil {
 		return err

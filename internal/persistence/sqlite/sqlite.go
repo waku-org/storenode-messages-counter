@@ -43,7 +43,7 @@ func NewDB(dburl string, logger *zap.Logger) (*sql.DB, error) {
 
 func migrationDriver(db *sql.DB) (database.Driver, error) {
 	return sqlite3.WithInstance(db, &sqlite3.Config{
-		MigrationsTable: sqlite3.DefaultMigrationsTable,
+		MigrationsTable: "message_counter_" + sqlite3.DefaultMigrationsTable,
 	})
 }
 
