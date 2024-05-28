@@ -138,19 +138,31 @@ func (d *DBStore) Start(ctx context.Context, timesource timesource.Timesource) e
 }
 
 func (d *DBStore) cleanOlderRecords(ctx context.Context) error {
-	d.log.Debug("cleaning older records...")
-
 	deleteFrom := time.Now().Add(d.retentionPolicy).UnixNano()
 
-	_, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < $1", deleteFrom)
+	d.log.Info("cleaning older records...", zap.Int64("from", deleteFrom))
+
+	r, err := d.db.ExecContext(ctx, "DELETE FROM missingMessages WHERE storedAt < $1", deleteFrom)
 	if err != nil {
 		return err
 	}
 
-	_, err = d.db.ExecContext(ctx, "DELETE FROM storeNodeUnavailable WHERE requestTime < $1", deleteFrom)
+	rowsAffected, err := r.RowsAffected()
 	if err != nil {
 		return err
 	}
+	d.log.Info("deleted missing messages from log", zap.Int64("rowsAffected", rowsAffected))
+
+	r, err = d.db.ExecContext(ctx, "DELETE FROM storeNodeUnavailable WHERE requestTime < $1", deleteFrom)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err = r.RowsAffected()
+	if err != nil {
+		return err
+	}
+	d.log.Info("deleted storenode unavailability from log", zap.Int64("rowsAffected", rowsAffected))
 
 	d.log.Debug("older records removed")
 
