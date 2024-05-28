@@ -93,6 +93,7 @@ func Execute(ctx context.Context, options Options) error {
 	}
 
 	wakuNode, err := node.New(
+		node.WithLogLevel(zap.DebugLevel), // options.LogLevel
 		node.WithNTP(),
 		node.WithClusterID(uint16(options.ClusterID)),
 		node.WithHostAddress(hostAddr),
