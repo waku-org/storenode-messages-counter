@@ -9,6 +9,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
 	"github.com/waku-org/go-waku/waku/v2/timesource"
+	"github.com/waku-org/go-waku/waku/v2/utils"
 	"go.uber.org/zap"
 )
 
@@ -260,7 +261,7 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 
 	now := time.Now().UnixNano()
 	for _, s := range storenodes {
-		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, s.Addrs[0].String(), status, now)
+		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, utils.EncapsulatePeerID(s.ID, s.Addrs[0])[0].String(), status, now)
 		if err != nil {
 			return err
 		}
@@ -277,7 +278,7 @@ func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode peer.AddrInf
 	defer stmt.Close()
 
 	now := time.Now().UnixNano()
-	_, err = stmt.Exec(uuid, storenode.Addrs[0].String(), now)
+	_, err = stmt.Exec(uuid, utils.EncapsulatePeerID(storenode.ID, storenode.Addrs[0])[0].String(), now)
 	if err != nil {
 		return err
 	}
