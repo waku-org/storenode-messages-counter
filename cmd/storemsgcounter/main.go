@@ -11,7 +11,7 @@ var options Options
 
 func main() {
 	// Defaults
-	options.LogLevel = "INFO"
+	options.LogLevel = "DEBUG"
 	options.LogEncoding = "console"
 
 	app := &cli.App{

@@ -21,6 +21,7 @@ import (
 	"github.com/waku-org/storenode-messages/internal/logging"
 	"github.com/waku-org/storenode-messages/internal/persistence"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -92,8 +93,13 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 
+	lvl, err := zapcore.ParseLevel(options.LogLevel)
+	if err != nil {
+		return err
+	}
+
 	wakuNode, err := node.New(
-		node.WithLogLevel(zap.DebugLevel), // options.LogLevel
+		node.WithLogLevel(lvl),
 		node.WithNTP(),
 		node.WithClusterID(uint16(options.ClusterID)),
 		node.WithHostAddress(hostAddr),
