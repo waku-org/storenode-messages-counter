@@ -292,7 +292,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 				ContentFilter: protocol.NewContentFilter(topic),
 				TimeStart:     proto.Int64(startTime.UnixNano()),
 				TimeEnd:       proto.Int64(endTime.UnixNano()),
-			}, store.WithPeer(node.ID))
+			}, store.WithPeer(node.ID), store.WithPaging(false, 100))
 			if err != nil {
 				logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
 				storeNodeFailure = true
@@ -335,7 +335,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 
 			nextRetryLbl:
 				for i := 0; i < maxAttempts; i++ {
-					logger.Info("EXECUTING NEXT!!!")
+					logger.Info("EXECUTING NEXT!!!", zap.String("cursor", hex.EncodeToString(result.Cursor())))
 					err = result.Next(ctx)
 					if err != nil {
 						logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
