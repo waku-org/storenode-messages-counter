@@ -131,12 +131,16 @@ func Execute(ctx context.Context, options Options) error {
 		case <-ctx.Done():
 			return nil
 		case <-timer.C:
-			logger.Info("verifying message history...")
-			err := verifyHistory(ctx, storenodes, wakuNode, dbStore, logger)
+			tmpUUID := uuid.New()
+			runId := hex.EncodeToString(tmpUUID[:])
+			runIdLogger := logger.With(zap.String("runId", runId))
+
+			runIdLogger.Info("verifying message history...")
+			err := verifyHistory(ctx, runId, storenodes, wakuNode, dbStore, runIdLogger)
 			if err != nil {
 				return err
 			}
-			logger.Info("verification complete")
+			runIdLogger.Info("verification complete")
 
 			timer.Reset(timeInterval)
 		}
@@ -147,11 +151,7 @@ var msgMapLock sync.Mutex
 var msgMap map[pb.MessageHash]map[peer.ID]MessageExistence
 var msgAttr map[pb.MessageHash]MessageAttr
 
-func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
-	tmpUUID := uuid.New()
-	runId := hex.EncodeToString(tmpUUID[:])
-
-	logger = logger.With(zap.String("runId", runId))
+func verifyHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
 
 	// [MessageHash][StoreNode] = exists?
 	msgMapLock.Lock()
