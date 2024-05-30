@@ -292,7 +292,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 
 	queryLbl:
 		for i := 0; i < maxAttempts; i++ {
-			logger.Info("retrieving message history for topic!", zap.Stringer("storenode", node), zap.Int64("from", startTime.UnixNano()), zap.Int64("to", endTime.UnixNano()), zap.Int("attempt", i))
+			logger.Info("retrieving message history for topic!", zap.Stringer("storenode", node.ID), zap.Int64("startTime", startTime.UnixNano()), zap.Int64("endTime", endTime.UnixNano()), zap.Int("attempt", i))
 
 			tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 			result, err = wakuNode.Store().Query(tCtx, store.FilterCriteria{
