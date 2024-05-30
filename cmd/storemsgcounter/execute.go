@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -146,7 +147,8 @@ var msgMap map[pb.MessageHash]map[peer.ID]MessageExistence
 var msgAttr map[pb.MessageHash]MessageAttr
 
 func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
-	runId := uuid.New().String()
+	tmpUUID := uuid.New()
+	runId := hex.EncodeToString(tmpUUID[:])
 
 	logger = logger.With(zap.String("runId", runId))
 
@@ -204,7 +206,7 @@ func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *no
 		wg.Add(1)
 		go func(peerID peer.ID, messageHashes []pb.MessageHash) {
 			defer wg.Done()
-			verifyMessageExistence(ctx, runId, tx, peerID, messageHashes, wakuNode, dbStore, logger)
+			verifyMessageExistence(ctx, runId, peerID, messageHashes, wakuNode, dbStore, logger)
 		}(peerID, messageHashes)
 	}
 	wg.Wait()
@@ -359,7 +361,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 	}
 }
 
-func verifyMessageExistence(ctx context.Context, runId string, tx *sql.Tx, peerID peer.ID, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) {
+func verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, messageHashes []pb.MessageHash, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) {
 	storeNodeFailure := false
 	var result *store.Result
 	var err error
