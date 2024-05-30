@@ -237,7 +237,7 @@ func verifyHistory(ctx context.Context, storenodes []peer.AddrInfo, wakuNode *no
 		}
 
 		if len(unknownIn) != 0 {
-			logger.Debug("message with unknown state identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgAttr[msgHash].PubsubTopic), zap.Int("num_nodes", len(missingIn)))
+			logger.Info("message with unknown state identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgAttr[msgHash].PubsubTopic), zap.Int("num_nodes", len(missingIn)))
 			err = dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
 			if err != nil {
 				return err
@@ -289,7 +289,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 				storeNodeFailure = true
 				time.Sleep(2 * time.Second)
 			} else {
-				logger.Debug("messages available?", zap.Int("len", len(result.Messages())))
+				logger.Info("messages available?", zap.Int("len", len(result.Messages())))
 				storeNodeFailure = false
 				break queryLbl
 			}
