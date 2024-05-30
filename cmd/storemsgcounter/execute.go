@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -344,7 +345,8 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 
 			nextRetryLbl:
 				for i := 0; i < maxAttempts; i++ {
-					logger.Info("EXECUTING NEXT!!!", zap.String("cursor", hex.EncodeToString(result.Cursor())))
+					a, _ := json.Marshal(result.Response())
+					logger.Info("EXECUTING NEXT!!!", zap.String("cursor", hex.EncodeToString(result.Cursor())), zap.String("RESPONSE", string(a)))
 					err = result.Next(ctx)
 					if err != nil {
 						logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
