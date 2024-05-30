@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -285,10 +284,9 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 		var result *store.Result
 		var err error
 
-		logger.Info("retrieving message history for topic", zap.Stringer("storenode", node), zap.Int64("from", startTime.UnixNano()), zap.Int64("to", endTime.UnixNano()))
-
 	queryLbl:
 		for i := 0; i < maxAttempts; i++ {
+			logger.Info("retrieving message history for topic", zap.Stringer("storenode", node), zap.Int64("from", startTime.UnixNano()), zap.Int64("to", endTime.UnixNano()), zap.Int("attempt", i))
 			result, err = wakuNode.Store().Query(ctx, store.FilterCriteria{
 				ContentFilter: protocol.NewContentFilter(topic),
 				TimeStart:     proto.Int64(startTime.UnixNano()),
@@ -345,8 +343,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 
 			nextRetryLbl:
 				for i := 0; i < maxAttempts; i++ {
-					a, _ := json.Marshal(result.Response())
-					logger.Info("EXECUTING NEXT!!!", zap.String("cursor", hex.EncodeToString(result.Cursor())), zap.String("RESPONSE", string(a)))
+					logger.Info("EXECUTING NEXT!!!", zap.String("cursor", hex.EncodeToString(result.Cursor())))
 					err = result.Next(ctx)
 					if err != nil {
 						logger.Error("could not query storenode", zap.Stringer("storenode", node), zap.Error(err))
@@ -392,7 +389,8 @@ func verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, m
 
 queryLbl:
 	for i := 0; i < maxAttempts; i++ {
-		result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID))
+		logger.Info("querying by hash", zap.Stringer("storenode", peerID), zap.Stringers("hashes", messageHashes), zap.Int("attempt", i))
+		result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID), store.WithPaging(false, 100))
 		if err != nil {
 			logger.Error("could not query storenode", zap.Stringer("storenode", peerInfo), zap.Error(err))
 			storeNodeFailure = true
@@ -436,6 +434,7 @@ queryLbl:
 
 		nextRetryLbl:
 			for i := 0; i < maxAttempts; i++ {
+				logger.Info("executing next while querying hashes", zap.Stringer("storenode", peerID), zap.Int("attempt", i))
 				err = result.Next(ctx)
 				if err != nil {
 					logger.Error("could not query storenode", zap.Stringer("storenode", peerInfo), zap.Error(err))
