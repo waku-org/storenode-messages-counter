@@ -316,7 +316,16 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 		iteratorLbl:
 			for !result.IsComplete() {
 				msgMapLock.Lock()
-				logger.Info("OBTAINED MESSAGES", zap.Any("len", len(result.Messages())))
+
+				oldMessageT := zap.Skip()
+				newMessageT := zap.Skip()
+				if len(result.Messages()) > 0 {
+					oldMessageT = zap.Int64("oldMessageT", result.Messages()[0].Message.GetTimestamp())
+					newMessageT = zap.Int64("newMessageT", result.Messages()[len(result.Messages())-1].Message.GetTimestamp())
+				}
+
+				logger.Info("OBTAINED MESSAGES", zap.Any("len", len(result.Messages())), newMessageT, oldMessageT)
+
 				for _, mkv := range result.Messages() {
 					hash := mkv.WakuMessageHash()
 					_, ok := msgMap[hash]
