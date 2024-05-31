@@ -330,7 +330,9 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 			nextRetryLbl:
 				for i := 0; i < maxAttempts; i++ {
 					queryLogger.Info("retrieving next page", zap.String("cursor", hex.EncodeToString(result.Cursor())))
-					err = result.Next(ctx)
+					tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+					err = result.Next(tCtx)
+					cancel()
 					if err != nil {
 						queryLogger.Error("could not query storenode", zap.String("cursor", hex.EncodeToString(result.Cursor())), zap.Error(err))
 						storeNodeFailure = true
@@ -373,7 +375,9 @@ func verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, m
 queryLbl:
 	for i := 0; i < maxAttempts; i++ {
 		queryLogger.Info("querying by hash", zap.Int("attempt", i))
-		result, err = wakuNode.Store().QueryByHash(ctx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID), store.WithPaging(false, 100))
+		tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+		result, err = wakuNode.Store().QueryByHash(tCtx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID), store.WithPaging(false, 100))
+		cancel()
 		if err != nil {
 			queryLogger.Error("could not query storenode", zap.Error(err), zap.Int("attempt", i))
 			storeNodeFailure = true
@@ -417,7 +421,9 @@ queryLbl:
 		nextRetryLbl:
 			for i := 0; i < maxAttempts; i++ {
 				queryLogger.Info("executing next while querying hashes", zap.String("cursor", hexutil.Encode(result.Cursor())), zap.Int("attempt", i))
-				err = result.Next(ctx)
+				tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
+				err = result.Next(tCtx)
+				cancel()
 				if err != nil {
 					queryLogger.Error("could not query storenode", zap.String("cursor", hexutil.Encode(result.Cursor())), zap.Error(err), zap.Int("attempt", i))
 					storeNodeFailure = true
