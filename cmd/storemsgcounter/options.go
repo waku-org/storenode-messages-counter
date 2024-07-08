@@ -20,4 +20,7 @@ type Options struct {
 	StoreNodes             []multiaddr.Multiaddr
 	DNSDiscoveryNameserver string
 	DNSDiscoveryURLs       cli.StringSlice
+	EnableMetrics          bool
+	MetricsAddress         string
+	MetricsPort            int
 }

@@ -102,4 +102,27 @@ var cliFlags = []cli.Flag{
 		Destination: &options.LogOutput,
 		EnvVars:     []string{"STORE_MSG_CTR_LOG_OUTPUT"},
 	}),
+	altsrc.NewBoolFlag(&cli.BoolFlag{
+		Name:        "metrics-server",
+		Aliases:     []string{"metrics"},
+		Usage:       "Enable the metrics server",
+		Destination: &options.EnableMetrics,
+		EnvVars:     []string{"STORE_MSG_CTR_METRICS_SERVER"},
+	}),
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:        "metrics-server-address",
+		Aliases:     []string{"metrics-address"},
+		Value:       "127.0.0.1",
+		Usage:       "Listening address of the metrics server",
+		Destination: &options.MetricsAddress,
+		EnvVars:     []string{"STORE_MSG_CTR_METRICS_SERVER_ADDRESS"},
+	}),
+	altsrc.NewIntFlag(&cli.IntFlag{
+		Name:        "metrics-server-port",
+		Aliases:     []string{"metrics-port"},
+		Value:       8008,
+		Usage:       "Listening HTTP port of the metrics server",
+		Destination: &options.MetricsPort,
+		EnvVars:     []string{"STORE_MSG_CTR_METRICS_SERVER_PORT"},
+	}),
 }

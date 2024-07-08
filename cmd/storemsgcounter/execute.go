@@ -20,6 +20,7 @@ import (
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
 	"github.com/waku-org/go-waku/waku/v2/protocol/store"
 	"github.com/waku-org/storenode-messages/internal/logging"
+	"github.com/waku-org/storenode-messages/internal/metrics"
 	"github.com/waku-org/storenode-messages/internal/persistence"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -49,6 +50,12 @@ func Execute(ctx context.Context, options Options) error {
 	logging.InitLogger(options.LogEncoding, options.LogOutput)
 
 	logger := logging.Logger()
+
+	var metricsServer *metrics.Server
+	if options.EnableMetrics {
+		metricsServer = metrics.NewMetricsServer(options.MetricsAddress, options.MetricsPort, logger)
+		go metricsServer.Start()
+	}
 
 	var db *sql.DB
 	var migrationFn func(*sql.DB, *zap.Logger) error
@@ -370,7 +377,7 @@ func verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, m
 
 	peerInfo := wakuNode.Host().Peerstore().PeerInfo(peerID)
 
-	queryLogger := logger.With(zap.Stringer("storenode", peerID), zap.Stringers("hashes", messageHashes))
+	queryLogger := logger.With(zap.Stringer("storenode", peerID))
 
 queryLbl:
 	for i := 0; i < maxAttempts; i++ {
