@@ -1,0 +1,1 @@
+ALTER TABLE missingMessages DROP COLUMN msgTimestamp;

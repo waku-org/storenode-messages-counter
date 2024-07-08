@@ -39,11 +39,6 @@ const timeInterval = 2 * time.Minute
 const delay = 5 * time.Minute
 const maxAttempts = 3
 
-type MessageAttr struct {
-	Timestamp   uint64
-	PubsubTopic string
-}
-
 func Execute(ctx context.Context, options Options) error {
 	// Set encoding for logs (console, json, ...)
 	// Note that libp2p reads the encoding from GOLOG_LOG_FMT env var.
@@ -155,14 +150,14 @@ func Execute(ctx context.Context, options Options) error {
 
 var msgMapLock sync.Mutex
 var msgMap map[pb.MessageHash]map[peer.ID]MessageExistence
-var msgAttr map[pb.MessageHash]MessageAttr
+var msgPubsubTopic map[pb.MessageHash]string
 
 func verifyHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo, wakuNode *node.WakuNode, dbStore *persistence.DBStore, logger *zap.Logger) error {
 
 	// [MessageHash][StoreNode] = exists?
 	msgMapLock.Lock()
 	msgMap = make(map[pb.MessageHash]map[peer.ID]MessageExistence)
-	msgAttr = make(map[pb.MessageHash]MessageAttr)
+	msgPubsubTopic = make(map[pb.MessageHash]string)
 	msgMapLock.Unlock()
 
 	topicSyncStatus, err := dbStore.GetTopicSyncStatus(ctx, options.ClusterID, options.PubSubTopics.Value())
@@ -219,7 +214,7 @@ func verifyHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo
 	wg.Wait()
 
 	// If a message is not available, store in DB in which store nodes it wasnt
-	// available and its timestamp
+	// available
 	// ========================================================================
 	msgMapLock.Lock()
 	defer msgMapLock.Unlock()
@@ -236,16 +231,16 @@ func verifyHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo
 		}
 
 		if len(missingIn) != 0 {
-			logger.Info("missing message identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgAttr[msgHash].PubsubTopic), zap.Int("num_nodes", len(missingIn)))
-			err := dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, missingIn, "does_not_exist")
+			logger.Info("missing message identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgPubsubTopic[msgHash]), zap.Int("num_nodes", len(missingIn)))
+			err := dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgPubsubTopic[msgHash], missingIn, "does_not_exist")
 			if err != nil {
 				return err
 			}
 		}
 
 		if len(unknownIn) != 0 {
-			logger.Info("message with unknown state identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgAttr[msgHash].PubsubTopic), zap.Int("num_nodes", len(missingIn)))
-			err = dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgAttr[msgHash].PubsubTopic, msgAttr[msgHash].Timestamp, unknownIn, "unknown")
+			logger.Info("message with unknown state identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgPubsubTopic[msgHash]), zap.Int("num_nodes", len(missingIn)))
+			err = dbStore.RecordMessage(runId, tx, msgHash, options.ClusterID, msgPubsubTopic[msgHash], unknownIn, "unknown")
 			if err != nil {
 				return err
 			}
@@ -294,7 +289,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 				ContentFilter: protocol.NewContentFilter(topic),
 				TimeStart:     proto.Int64(startTime.UnixNano()),
 				TimeEnd:       proto.Int64(endTime.UnixNano()),
-			}, store.WithPeer(node.ID), store.WithPaging(false, 100))
+			}, store.WithPeer(node.ID), store.WithPaging(false, 100), store.IncludeData(false))
 			cancel()
 			if err != nil {
 				queryLogger.Error("could not query storenode", zap.Error(err), zap.Int("attempt", i))
@@ -325,10 +320,7 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 						msgMap[hash] = make(map[peer.ID]MessageExistence)
 					}
 					msgMap[hash][node.ID] = Exists
-					msgAttr[hash] = MessageAttr{
-						Timestamp:   uint64(mkv.Message.GetTimestamp()),
-						PubsubTopic: mkv.GetPubsubTopic(),
-					}
+					msgPubsubTopic[hash] = mkv.GetPubsubTopic()
 				}
 				msgMapLock.Unlock()
 
