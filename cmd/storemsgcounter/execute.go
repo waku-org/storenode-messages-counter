@@ -260,10 +260,13 @@ func verifyHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo
 
 	for s, cnt := range missingInSummary {
 		metrics.RecordMissingMessages(s, "does_not_exist", cnt)
+		logger.Info("missing message summary", zap.String("storenode", s), zap.Int("numMsgs", cnt))
 	}
 
 	for s, cnt := range unknownInSummary {
 		metrics.RecordMissingMessages(s, "unknown", cnt)
+		logger.Info("messages that could not be verified summary", zap.String("storenode", s), zap.Int("numMsgs", cnt))
+
 	}
 
 	return nil
