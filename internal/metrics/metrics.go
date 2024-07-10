@@ -8,7 +8,7 @@ import (
 
 var missingMessages = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
-		Name: "missing_messages",
+		Name: "counter_missing_messages",
 		Help: "The messages identified as missing and the reason why they're missing",
 	},
 	[]string{"storenode", "status"},
@@ -16,7 +16,7 @@ var missingMessages = prometheus.NewGaugeVec(
 
 var storenodeUnavailable = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
-		Name: "storenode_unavailable",
+		Name: "counter_storenode_unavailable",
 		Help: "Number of PubSub Topics node is subscribed to",
 	},
 	[]string{"storenode"},
