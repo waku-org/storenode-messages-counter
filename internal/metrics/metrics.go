@@ -6,16 +6,16 @@ import (
 	"go.uber.org/zap"
 )
 
-var missingMessages = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
+var missingMessages = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
 		Name: "missing_messages",
 		Help: "The messages identified as missing and the reason why they're missing",
 	},
 	[]string{"storenode", "status"},
 )
 
-var storenodeUnavailable = prometheus.NewCounterVec(
-	prometheus.CounterOpts{
+var storenodeUnavailable = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
 		Name: "storenode_unavailable",
 		Help: "Number of PubSub Topics node is subscribed to",
 	},
@@ -29,7 +29,7 @@ var collectors = []prometheus.Collector{
 
 // Metrics exposes the functions required to update prometheus metrics for relay protocol
 type Metrics interface {
-	RecordMissingMessage(storenode string, status string)
+	RecordMissingMessages(storenode string, status string, length int)
 	RecordStorenodeUnavailable(storenode string)
 }
 
@@ -46,14 +46,14 @@ func NewMetrics(reg prometheus.Registerer, logger *zap.Logger) Metrics {
 	}
 }
 
-func (m *metricsImpl) RecordMissingMessage(storenode string, status string) {
+func (m *metricsImpl) RecordMissingMessages(storenode string, status string, length int) {
 	go func() {
-		missingMessages.WithLabelValues(storenode, status).Inc()
+		missingMessages.WithLabelValues(storenode, status).Set(float64(length))
 	}()
 }
 
 func (m *metricsImpl) RecordStorenodeUnavailable(storenode string) {
 	go func() {
-		storenodeUnavailable.WithLabelValues(storenode).Inc()
+		storenodeUnavailable.WithLabelValues(storenode).Set(1)
 	}()
 }

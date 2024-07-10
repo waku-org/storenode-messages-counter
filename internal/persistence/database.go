@@ -6,12 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
 	"github.com/waku-org/go-waku/waku/v2/timesource"
-	"github.com/waku-org/go-waku/waku/v2/utils"
-	"github.com/waku-org/storenode-messages/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -20,7 +16,6 @@ type DBStore struct {
 	db              *sql.DB
 	migrationFn     func(db *sql.DB, logger *zap.Logger) error
 	retentionPolicy time.Duration
-	metrics         metrics.Metrics
 
 	timesource timesource.Timesource
 	log        *zap.Logger
@@ -103,8 +98,6 @@ func NewDBStore(log *zap.Logger, options ...DBOption) (*DBStore, error) {
 
 	optList := DefaultOptions()
 	optList = append(optList, options...)
-
-	result.metrics = metrics.NewMetrics(prometheus.DefaultRegisterer, log)
 
 	for _, opt := range optList {
 		err := opt(result)
@@ -257,8 +250,8 @@ func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string,
 	return stmt.Close()
 }
 
-func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, timestamp uint64, storenodes []peer.AddrInfo, status string) error {
-	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, clusterId, pubsubTopic, messageHash, msgTimestamp, storenode, msgStatus, storedAt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
+func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, storenodes []string, status string) error {
+	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, clusterId, pubsubTopic, messageHash, storenode, msgStatus, storedAt) VALUES ($1, $2, $3, $4, $5, $6, $7)")
 	if err != nil {
 		return err
 	}
@@ -266,35 +259,28 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 
 	now := time.Now().UnixNano()
 	for _, s := range storenodes {
-		storeAddr := utils.EncapsulatePeerID(s.ID, s.Addrs[0])[0].String()
-
-		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), timestamp, storeAddr, status, now)
+		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), s, status, now)
 		if err != nil {
 			return err
 		}
 
-		d.metrics.RecordMissingMessage(storeAddr, status)
 	}
 
 	return nil
 }
 
-func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode peer.AddrInfo) error {
+func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode string) error {
 	stmt, err := d.db.Prepare("INSERT INTO storeNodeUnavailable(runId, storenode, requestTime) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
-	storeAddr := utils.EncapsulatePeerID(storenode.ID, storenode.Addrs[0])[0].String()
-
 	now := time.Now().UnixNano()
 	_, err = stmt.Exec(uuid, storenode, now)
 	if err != nil {
 		return err
 	}
-
-	d.metrics.RecordStorenodeUnavailable(storeAddr)
 
 	return nil
 }
