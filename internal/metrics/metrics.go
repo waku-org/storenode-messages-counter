@@ -14,23 +14,23 @@ var missingMessages = prometheus.NewGaugeVec(
 	[]string{"storenode", "status"},
 )
 
-var storenodeUnavailable = prometheus.NewGaugeVec(
+var storenodeAvailability = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
-		Name: "counter_storenode_unavailable",
-		Help: "Number of PubSub Topics node is subscribed to",
+		Name: "counter_storenode_availability",
+		Help: "Indicate whether a store node is available or not",
 	},
 	[]string{"storenode"},
 )
 
 var collectors = []prometheus.Collector{
 	missingMessages,
-	storenodeUnavailable,
+	storenodeAvailability,
 }
 
 // Metrics exposes the functions required to update prometheus metrics for relay protocol
 type Metrics interface {
 	RecordMissingMessages(storenode string, status string, length int)
-	RecordStorenodeUnavailable(storenode string)
+	RecordStorenodeAvailability(storenode string, available bool)
 }
 
 type metricsImpl struct {
@@ -52,8 +52,12 @@ func (m *metricsImpl) RecordMissingMessages(storenode string, status string, len
 	}()
 }
 
-func (m *metricsImpl) RecordStorenodeUnavailable(storenode string) {
+func (m *metricsImpl) RecordStorenodeAvailability(storenode string, available bool) {
 	go func() {
-		storenodeUnavailable.WithLabelValues(storenode).Set(1)
+		gaugeValue := float64(1)
+		if !available {
+			gaugeValue = 0
+		}
+		storenodeAvailability.WithLabelValues(storenode).Set(gaugeValue)
 	}()
 }

@@ -329,8 +329,9 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 			if err != nil {
 				queryLogger.Error("could not store node unavailable", zap.Error(err))
 			}
-			metrics.RecordStorenodeUnavailable(storeAddr)
+			metrics.RecordStorenodeAvailability(storeAddr, false)
 		} else {
+			metrics.RecordStorenodeAvailability(storeAddr, true)
 
 		iteratorLbl:
 			for !result.IsComplete() {
@@ -371,8 +372,10 @@ func retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrIn
 					if err != nil {
 						queryLogger.Error("could not store recordnode unavailable", zap.String("cursor", hex.EncodeToString(result.Cursor())), zap.Error(err))
 					}
-					metrics.RecordStorenodeUnavailable(storeAddr)
+					metrics.RecordStorenodeAvailability(storeAddr, false)
 					break iteratorLbl
+				} else {
+					metrics.RecordStorenodeAvailability(storeAddr, true)
 				}
 			}
 		}
@@ -421,9 +424,11 @@ queryLbl:
 		if err != nil {
 			queryLogger.Error("could not store recordnode unavailable", zap.Error(err))
 		}
-		metrics.RecordStorenodeUnavailable(storeAddr)
+		metrics.RecordStorenodeAvailability(storeAddr, false)
 
 	} else {
+		metrics.RecordStorenodeAvailability(storeAddr, true)
+
 		for !result.IsComplete() {
 			msgMapLock.Lock()
 			for _, mkv := range result.Messages() {
@@ -468,7 +473,9 @@ queryLbl:
 				if err != nil {
 					logger.Error("could not store recordnode unavailable", zap.Error(err), zap.String("cursor", hex.EncodeToString(result.Cursor())), zap.Stringer("storenode", peerInfo))
 				}
-				metrics.RecordStorenodeUnavailable(storeAddr)
+				metrics.RecordStorenodeAvailability(storeAddr, false)
+			} else {
+				metrics.RecordStorenodeAvailability(storeAddr, true)
 			}
 		}
 	}
