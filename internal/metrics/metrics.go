@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/metricshelper"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,6 +32,14 @@ var storenodeAvailability = prometheus.NewGaugeVec(
 	[]string{"storenode"},
 )
 
+var topicLastSync = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "msgcounter_topic_lastsyncdate_seconds",
+		Help: "Indicates the last syncdate for a pubsubtopic",
+	},
+	[]string{"pubsubtopic"},
+)
+
 var collectors = []prometheus.Collector{
 	missingMessages,
 	storenodeAvailability,
@@ -40,6 +50,7 @@ type Metrics interface {
 	RecordMissingMessages(peerID peer.ID, status string, length int)
 	RecordStorenodeAvailability(peerID peer.ID, available bool)
 	RecordTotalMissingMessages(cnt int)
+	RecordLastSyncDate(topic string, date time.Time)
 }
 
 type metricsImpl struct {
@@ -74,5 +85,11 @@ func (m *metricsImpl) RecordStorenodeAvailability(peerID peer.ID, available bool
 func (m *metricsImpl) RecordTotalMissingMessages(cnt int) {
 	go func() {
 		totalMissingMessages.Set(float64(cnt))
+	}()
+}
+
+func (m *metricsImpl) RecordLastSyncDate(topic string, date time.Time) {
+	go func() {
+		topicLastSync.WithLabelValues(topic).Set(float64(date.Unix()))
 	}()
 }

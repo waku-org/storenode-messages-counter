@@ -379,6 +379,10 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 func (app *Application) retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo, topic string, lastSyncTimestamp *time.Time, tx *sql.Tx, logger *zap.Logger) {
 	logger = logger.With(zap.String("topic", topic), zap.Timep("lastSyncTimestamp", lastSyncTimestamp))
 
+	if lastSyncTimestamp != nil {
+		app.metrics.RecordLastSyncDate(topic, *lastSyncTimestamp)
+	}
+
 	now := app.node.Timesource().Now()
 
 	// Query is done with a delay
@@ -410,6 +414,9 @@ func (app *Application) retrieveHistory(ctx context.Context, runId string, store
 	if err != nil {
 		logger.Panic("could not update topic sync state", zap.Error(err))
 	}
+
+	app.metrics.RecordLastSyncDate(topic, endTime)
+
 }
 
 func (app *Application) verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, messageHashes []pb.MessageHash, logger *zap.Logger) {
