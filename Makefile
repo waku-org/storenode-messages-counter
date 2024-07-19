@@ -14,4 +14,4 @@ lint-install:
 
 lint:
 	@echo "lint"
-	@golangci-lint run ./... --deadline=5m
+	@golangci-lint run ./...
