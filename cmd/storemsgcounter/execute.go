@@ -281,6 +281,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 		logger.Info("messages that could not be verified summary", zap.Stringer("storenode", s.ID), zap.Int("numMsgs", missingCnt))
 	}
 
+	logger.Info("total missing messages", zap.Int("total", totalMissingMessages))
 	app.metrics.RecordTotalMissingMessages(totalMissingMessages)
 
 	return nil
