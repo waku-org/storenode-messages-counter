@@ -43,6 +43,8 @@ var topicLastSync = prometheus.NewGaugeVec(
 var collectors = []prometheus.Collector{
 	missingMessages,
 	storenodeAvailability,
+	totalMissingMessages,
+	topicLastSync,
 }
 
 // Metrics exposes the functions required to update prometheus metrics for relay protocol

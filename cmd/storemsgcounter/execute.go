@@ -53,7 +53,7 @@ func Execute(ctx context.Context, options Options) error {
 
 	logger := logging.Logger()
 
-	logger.Warn("AppStart -")
+	logger.Warn("AppStart")
 
 	var metricsServer *metrics.Server
 	if options.EnableMetrics {
