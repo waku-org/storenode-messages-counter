@@ -237,10 +237,12 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 
 	missingInSummary := make(map[peer.ID]int)
 	unknownInSummary := make(map[peer.ID]int)
+	totalMissingMessages := 0
 
 	for msgHash, nodes := range msgMap {
 		var missingIn []peer.ID
 		var unknownIn []peer.ID
+
 		for _, node := range storenodes {
 			if nodes[node.ID] == DoesNotExist {
 				missingIn = append(missingIn, node.ID)
@@ -257,6 +259,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 			if err != nil {
 				return err
 			}
+			totalMissingMessages++
 		}
 
 		if len(unknownIn) != 0 {
@@ -277,6 +280,8 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 		app.metrics.RecordMissingMessages(s.ID, "unknown", unknownCnt)
 		logger.Info("messages that could not be verified summary", zap.Stringer("storenode", s.ID), zap.Int("numMsgs", missingCnt))
 	}
+
+	app.metrics.RecordTotalMissingMessages(totalMissingMessages)
 
 	return nil
 }

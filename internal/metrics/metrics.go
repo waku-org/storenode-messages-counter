@@ -15,6 +15,13 @@ var missingMessages = prometheus.NewGaugeVec(
 	[]string{"storenode", "status"},
 )
 
+var totalMissingMessages = prometheus.NewGauge(
+	prometheus.GaugeOpts{
+		Name: "msgcounter_total_missing_messages",
+		Help: "The global total number of missing messages",
+	},
+)
+
 var storenodeAvailability = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "msgcounter_storenode_availability",
@@ -32,6 +39,7 @@ var collectors = []prometheus.Collector{
 type Metrics interface {
 	RecordMissingMessages(peerID peer.ID, status string, length int)
 	RecordStorenodeAvailability(peerID peer.ID, available bool)
+	RecordTotalMissingMessages(cnt int)
 }
 
 type metricsImpl struct {
@@ -60,5 +68,11 @@ func (m *metricsImpl) RecordStorenodeAvailability(peerID peer.ID, available bool
 			gaugeValue = 0
 		}
 		storenodeAvailability.WithLabelValues(peerID.String()).Set(gaugeValue)
+	}()
+}
+
+func (m *metricsImpl) RecordTotalMissingMessages(cnt int) {
+	go func() {
+		totalMissingMessages.Set(float64(cnt))
 	}()
 }
