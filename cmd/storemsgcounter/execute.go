@@ -268,15 +268,14 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 		}
 	}
 
-	for s, cnt := range missingInSummary {
-		app.metrics.RecordMissingMessages(s, "does_not_exist", cnt)
-		logger.Info("missing message summary", zap.Stringer("storenode", s), zap.Int("numMsgs", cnt))
-	}
+	for _, s := range storenodes {
+		missingCnt := missingInSummary[s.ID]
+		app.metrics.RecordMissingMessages(s.ID, "does_not_exist", missingCnt)
+		logger.Info("missing message summary", zap.Stringer("storenode", s.ID), zap.Int("numMsgs", missingCnt))
 
-	for s, cnt := range unknownInSummary {
-		app.metrics.RecordMissingMessages(s, "unknown", cnt)
-		logger.Info("messages that could not be verified summary", zap.Stringer("storenode", s), zap.Int("numMsgs", cnt))
-
+		unknownCnt := unknownInSummary[s.ID]
+		app.metrics.RecordMissingMessages(s.ID, "unknown", unknownCnt)
+		logger.Info("messages that could not be verified summary", zap.Stringer("storenode", s.ID), zap.Int("numMsgs", missingCnt))
 	}
 
 	return nil
