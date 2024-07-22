@@ -14,6 +14,9 @@ This table contains the list of missing messages, and in which storenode the mes
 ### `storeNodeUnavailable`
 This table records timestamps on which a specific storenode was not available. This information should be used along with data from https://kibana.infra.status.im/ and https://grafana.infra.status.im/ to determine the reason why the storenode was not available.
 
+# Dashboard
+A grafana dashboard is available in https://grafana.infra.status.im/d/hmX6pJ_Iz/storenode-message-counter?orgId=1
+
 # Browsing the logs
 
 You can browse the logs in kibana at https://kibana.infra.status.im/goto/0be1cef0-1782-11ef-8a2b-91a1a792bd9c
