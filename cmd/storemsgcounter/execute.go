@@ -341,7 +341,7 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 				msgMap[hash] = make(map[peer.ID]MessageExistence)
 			}
 			msgMap[hash][storenodeID] = Exists
-			msgPubsubTopic[hash] = mkv.GetPubsubTopic()
+			msgPubsubTopic[hash] = topic
 		}
 		msgMapLock.Unlock()
 
