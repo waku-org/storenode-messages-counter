@@ -69,7 +69,9 @@ var collectors = []prometheus.Collector{
 	storenodeAvailability,
 	totalMissingMessages,
 	topicLastSync,
+	missingMessagesPreviousHour,
 	missingMessagesLastDay,
+	missingMessagesLastWeek,
 }
 
 // Metrics exposes the functions required to update prometheus metrics for relay protocol
