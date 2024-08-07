@@ -65,7 +65,7 @@ var cliFlags = []cli.Flag{
 	altsrc.NewStringFlag(&cli.StringFlag{
 		Name:        "db-url",
 		Usage:       "The database connection URL for persistent storage.",
-		Value:       "sqlite3://storage.db",
+		Value:       "",
 		Destination: &options.DatabaseURL,
 		EnvVars:     []string{"MSG_VERIF_DB_URL"},
 	}),

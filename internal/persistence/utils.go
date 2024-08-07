@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/waku-org/storenode-messages/internal/persistence/postgres"
-	"github.com/waku-org/storenode-messages/internal/persistence/sqlite"
 	"go.uber.org/zap"
 )
 
@@ -42,10 +41,8 @@ func ParseURL(databaseURL string, logger *zap.Logger) (*sql.DB, func(*sql.DB, *z
 	dbURLParts := strings.Split(dbURL, "://")
 	dbEngine := dbURLParts[0]
 	dbParams := dbURLParts[1]
+	_ = dbParams
 	switch dbEngine {
-	case "sqlite3":
-		db, err = sqlite.NewDB(dbParams, logger)
-		migrationFn = sqlite.Migrations
 	case "postgres", "postgresql":
 		db, err = postgres.NewDB(dbURL, logger)
 		migrationFn = postgres.Migrations

@@ -1,0 +1,2 @@
+ALTER TABLE missingMessages
+ADD COLUMN foundOnRecheck BOOLEAN DEFAULT FALSE NOT NULL;

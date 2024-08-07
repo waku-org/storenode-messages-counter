@@ -2,6 +2,7 @@
 // sources:
 // 1_setup.up.sql (856B)
 // 2_timestamp.up.sql (53B)
+// 3_found.up.sql (86B)
 // doc.go (74B)
 
 package migrations
@@ -108,6 +109,26 @@ func _2_timestampUpSql() (*asset, error) {
 
 	info := bindataFileInfo{name: "2_timestamp.up.sql", size: 53, mode: os.FileMode(0664), modTime: time.Unix(1720472316, 0)}
 	a := &asset{bytes: bytes, info: info, digest: [32]uint8{0x81, 0x97, 0xcf, 0xf4, 0x2e, 0x3c, 0xca, 0x2, 0xd6, 0x9e, 0x7e, 0xf8, 0x7c, 0x18, 0x9c, 0x82, 0x25, 0x54, 0xd6, 0xd6, 0x21, 0x25, 0xdf, 0xf9, 0xdf, 0x24, 0x7a, 0xca, 0xbf, 0xeb, 0xe5, 0xd2}}
+	return a, nil
+}
+
+var __3_foundUpSql = []byte("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\xff\x04\xc0\x41\x0e\x82\x40\x0c\x05\xd0\x3d\xa7\xf8\xf7\x70\x55\x9c\xb2\xfa\xb4\x09\x76\x0e\x60\xb0\x22\x31\x8e\x8b\xc6\xfb\xfb\x84\xa1\x1b\x42\x66\x2a\x3e\x67\xd5\x39\x8e\x35\xab\xee\x47\xd6\x24\xad\xe1\xea\xec\xab\xe1\xf9\xfd\x8d\x87\x8f\x2d\xf7\x57\xee\x6f\xcc\xee\x54\x31\x34\x5d\xa4\x33\xb0\x08\x6f\x0a\xf3\x80\x75\xf2\x32\xfd\x03\x00\x00\xff\xff\xc0\x0e\x74\x77\x56\x00\x00\x00")
+
+func _3_foundUpSqlBytes() ([]byte, error) {
+	return bindataRead(
+		__3_foundUpSql,
+		"3_found.up.sql",
+	)
+}
+
+func _3_foundUpSql() (*asset, error) {
+	bytes, err := _3_foundUpSqlBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	info := bindataFileInfo{name: "3_found.up.sql", size: 86, mode: os.FileMode(0664), modTime: time.Unix(1723057360, 0)}
+	a := &asset{bytes: bytes, info: info, digest: [32]uint8{0x65, 0x30, 0x49, 0xb0, 0x22, 0x8c, 0xab, 0xc4, 0x3a, 0x4e, 0x39, 0xe, 0x31, 0x1, 0x53, 0xbe, 0x5c, 0x7a, 0x9a, 0xcd, 0x84, 0xe9, 0x28, 0x7d, 0xeb, 0xb4, 0x2, 0xc2, 0x3d, 0xee, 0x5d, 0x7a}}
 	return a, nil
 }
 
@@ -226,6 +247,8 @@ var _bindata = map[string]func() (*asset, error){
 
 	"2_timestamp.up.sql": _2_timestampUpSql,
 
+	"3_found.up.sql": _3_foundUpSql,
+
 	"doc.go": docGo,
 }
 
@@ -272,6 +295,7 @@ type bintree struct {
 var _bintree = &bintree{nil, map[string]*bintree{
 	"1_setup.up.sql":     &bintree{_1_setupUpSql, map[string]*bintree{}},
 	"2_timestamp.up.sql": &bintree{_2_timestampUpSql, map[string]*bintree{}},
+	"3_found.up.sql":     &bintree{_3_foundUpSql, map[string]*bintree{}},
 	"doc.go":             &bintree{docGo, map[string]*bintree{}},
 }}
 

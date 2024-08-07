@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/maps"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/google/uuid"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -128,8 +130,10 @@ func Execute(ctx context.Context, options Options) error {
 	}
 	defer wakuNode.Stop()
 
+	var storenodeIDs peer.IDSlice
 	for _, s := range storenodes {
 		wakuNode.Host().Peerstore().AddAddrs(s.ID, s.Addrs, peerstore.PermanentAddrTTL)
+		storenodeIDs = append(storenodeIDs, s.ID)
 	}
 
 	err = dbStore.Start(ctx, wakuNode.Timesource())
@@ -143,25 +147,50 @@ func Execute(ctx context.Context, options Options) error {
 		db:      dbStore,
 	}
 
-	timer := time.NewTimer(0)
-	defer timer.Stop()
+	missingMessagesTimer := time.NewTimer(0)
+	defer missingMessagesTimer.Stop()
+
+	syncCheckTimer := time.NewTicker(30 * time.Minute)
+	defer syncCheckTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-timer.C:
+		case <-missingMessagesTimer.C:
 			tmpUUID := uuid.New()
 			runId := hex.EncodeToString(tmpUUID[:])
 			runIdLogger := logger.With(zap.String("runId", runId))
 
 			runIdLogger.Info("verifying message history...")
-			err := application.verifyHistory(ctx, runId, storenodes, runIdLogger)
+			err := application.verifyHistory(ctx, runId, storenodeIDs, runIdLogger)
 			if err != nil {
 				return err
 			}
 			runIdLogger.Info("verification complete")
 
-			timer.Reset(timeInterval)
+			missingMessagesTimer.Reset(timeInterval)
+		case <-syncCheckTimer.C:
+			go func() {
+				tmpUUID := uuid.New()
+				runId := hex.EncodeToString(tmpUUID[:])
+				runIdLogger := logger.With(zap.String("syncRunId", runId))
+				runIdLogger.Info("rechecking missing messages status")
+
+				err := application.checkMissingMessageStatus(ctx, runId, runIdLogger)
+				if err != nil {
+					logger.Error("could not recheck the status of missing messages", zap.Error(err))
+					return
+				}
+
+				err = application.countMissingMessages()
+				if err != nil {
+					logger.Error("could not count missing messages", zap.Error(err))
+					return
+				}
+
+				runIdLogger.Info("missing messages recheck complete")
+			}()
 		}
 	}
 }
@@ -170,7 +199,7 @@ var msgMapLock sync.Mutex
 var msgMap map[pb.MessageHash]map[peer.ID]MessageExistence
 var msgPubsubTopic map[pb.MessageHash]string
 
-func (app *Application) verifyHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo, logger *zap.Logger) error {
+func (app *Application) verifyHistory(ctx context.Context, runId string, storenodes peer.IDSlice, logger *zap.Logger) error {
 
 	// [MessageHash][StoreNode] = exists?
 	msgMapLock.Lock()
@@ -213,9 +242,9 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 	msgsToVerify := make(map[peer.ID][]pb.MessageHash) // storenode -> msgHash
 	msgMapLock.Lock()
 	for msgHash, nodes := range msgMap {
-		for _, node := range storenodes {
-			if nodes[node.ID] != Exists {
-				msgsToVerify[node.ID] = append(msgsToVerify[node.ID], msgHash)
+		for _, s := range storenodes {
+			if nodes[s] != Exists {
+				msgsToVerify[s] = append(msgsToVerify[s], msgHash)
 			}
 		}
 	}
@@ -226,7 +255,27 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 		wg.Add(1)
 		go func(peerID peer.ID, messageHashes []pb.MessageHash) {
 			defer wg.Done()
-			app.verifyMessageExistence(ctx, runId, peerID, messageHashes, logger)
+
+			onResult := func(result *store.Result) {
+				msgMapLock.Lock()
+				for _, mkv := range result.Messages() {
+					hash := mkv.WakuMessageHash()
+					_, ok := msgMap[hash]
+					if !ok {
+						msgMap[hash] = make(map[peer.ID]MessageExistence)
+					}
+					msgMap[hash][result.PeerID()] = Exists
+				}
+
+				for _, msgHash := range messageHashes {
+					if msgMap[msgHash][result.PeerID()] != Exists {
+						msgMap[msgHash][result.PeerID()] = DoesNotExist
+					}
+				}
+				msgMapLock.Unlock()
+			}
+
+			app.verifyMessageExistence(ctx, runId, peerID, messageHashes, onResult, logger)
 		}(peerID, messageHashes)
 	}
 	wg.Wait()
@@ -245,13 +294,13 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 		var missingIn []peer.ID
 		var unknownIn []peer.ID
 
-		for _, node := range storenodes {
-			if nodes[node.ID] == DoesNotExist {
-				missingIn = append(missingIn, node.ID)
-				missingInSummary[node.ID]++
-			} else if nodes[node.ID] == Unknown {
-				unknownIn = append(unknownIn, node.ID)
-				unknownInSummary[node.ID]++
+		for _, s := range storenodes {
+			if nodes[s] == DoesNotExist {
+				missingIn = append(missingIn, s)
+				missingInSummary[s]++
+			} else if nodes[s] == Unknown {
+				unknownIn = append(unknownIn, s)
+				unknownInSummary[s]++
 			}
 		}
 
@@ -274,18 +323,82 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 	}
 
 	for _, s := range storenodes {
-		missingCnt := missingInSummary[s.ID]
-		app.metrics.RecordMissingMessages(s.ID, "does_not_exist", missingCnt)
-		logger.Info("missing message summary", zap.Stringer("storenode", s.ID), zap.Int("numMsgs", missingCnt))
+		missingCnt := missingInSummary[s]
+		app.metrics.RecordMissingMessages(s, "does_not_exist", missingCnt)
+		logger.Info("missing message summary", zap.Stringer("storenode", s), zap.Int("numMsgs", missingCnt))
 
-		unknownCnt := unknownInSummary[s.ID]
-		app.metrics.RecordMissingMessages(s.ID, "unknown", unknownCnt)
-		logger.Info("messages that could not be verified summary", zap.Stringer("storenode", s.ID), zap.Int("numMsgs", missingCnt))
+		unknownCnt := unknownInSummary[s]
+		app.metrics.RecordMissingMessages(s, "unknown", unknownCnt)
+		logger.Info("messages that could not be verified summary", zap.Stringer("storenode", s), zap.Int("numMsgs", missingCnt))
 	}
 
 	logger.Info("total missing messages", zap.Int("total", totalMissingMessages))
 	app.metrics.RecordTotalMissingMessages(totalMissingMessages)
 
+	return nil
+}
+
+func (app *Application) checkMissingMessageStatus(ctx context.Context, runId string, logger *zap.Logger) error {
+	now := app.node.Timesource().Now()
+
+	// Get all messages whose status is missing or does not exist, and the column found_on_recheck is false
+	// if found, set found_on_recheck to true
+	missingMessages, err := app.db.GetMissingMessages(now.Add(-2*time.Hour), now.Add(-time.Hour), options.ClusterID)
+	if err != nil {
+		return err
+	}
+
+	wg := sync.WaitGroup{}
+	for storenodeID, messageHashes := range missingMessages {
+		wg.Add(1)
+		go func(peerID peer.ID, messageHashes []pb.MessageHash) {
+			defer wg.Done()
+
+			foundMissingMessages := make(map[pb.MessageHash]struct{})
+			app.verifyMessageExistence(ctx, runId, peerID, messageHashes, func(result *store.Result) {
+				for _, mkv := range result.Messages() {
+					foundMissingMessages[mkv.WakuMessageHash()] = struct{}{}
+				}
+			}, logger)
+
+			err := app.db.MarkMessagesAsFound(peerID, maps.Keys(foundMissingMessages), options.ClusterID)
+			if err != nil {
+				logger.Error("could not mark messages as found", zap.Error(err))
+				return
+			}
+
+			app.metrics.RecordMissingMessagesPrevHour(peerID, len(messageHashes)-len(foundMissingMessages))
+
+		}(storenodeID, messageHashes)
+	}
+
+	wg.Wait()
+
+	return nil
+}
+
+func (app *Application) countMissingMessages() error {
+
+	// not including last two hours in now to let sync work
+	now := app.node.Timesource().Now().Add(-2 * time.Hour)
+
+	// Count messages in last day (not including last two hours)
+	results, err := app.db.CountMissingMessages(now.Add(-24*time.Hour), now, options.ClusterID)
+	if err != nil {
+		return err
+	}
+	for storenode, cnt := range results {
+		app.metrics.RecordMissingMessagesLastDay(storenode, cnt)
+	}
+
+	// Count messages in last week (not including last two hours)
+	results, err = app.db.CountMissingMessages(now.Add(-24*time.Hour*7), now, options.ClusterID)
+	if err != nil {
+		return err
+	}
+	for storenode, cnt := range results {
+		app.metrics.RecordMissingMessagesLastWeek(storenode, cnt)
+	}
 	return nil
 }
 
@@ -379,7 +492,7 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 	}
 }
 
-func (app *Application) retrieveHistory(ctx context.Context, runId string, storenodes []peer.AddrInfo, topic string, lastSyncTimestamp *time.Time, tx *sql.Tx, logger *zap.Logger) {
+func (app *Application) retrieveHistory(ctx context.Context, runId string, storenodes peer.IDSlice, topic string, lastSyncTimestamp *time.Time, tx *sql.Tx, logger *zap.Logger) {
 	logger = logger.With(zap.String("topic", topic), zap.Timep("lastSyncTimestamp", lastSyncTimestamp))
 
 	if lastSyncTimestamp != nil {
@@ -402,12 +515,12 @@ func (app *Application) retrieveHistory(ctx context.Context, runId string, store
 
 	// Determine if the messages exist across all nodes
 	wg := sync.WaitGroup{}
-	for _, node := range storenodes {
+	for _, storePeerID := range storenodes {
 		wg.Add(1)
 		go func(peerID peer.ID) {
 			defer wg.Done()
 			app.fetchStoreNodeMessages(ctx, runId, peerID, topic, startTime, endTime, logger)
-		}(node.ID)
+		}(storePeerID)
 	}
 
 	wg.Wait()
@@ -422,7 +535,7 @@ func (app *Application) retrieveHistory(ctx context.Context, runId string, store
 
 }
 
-func (app *Application) verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, messageHashes []pb.MessageHash, logger *zap.Logger) {
+func (app *Application) verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, messageHashes []pb.MessageHash, onResult func(result *store.Result), logger *zap.Logger) {
 	var result *store.Result
 	var err error
 
@@ -462,23 +575,7 @@ func (app *Application) verifyMessageExistence(ctx context.Context, runId string
 	app.metrics.RecordStorenodeAvailability(peerID, true)
 
 	for !result.IsComplete() {
-		msgMapLock.Lock()
-		for _, mkv := range result.Messages() {
-			hash := mkv.WakuMessageHash()
-			_, ok := msgMap[hash]
-			if !ok {
-				msgMap[hash] = make(map[peer.ID]MessageExistence)
-			}
-			msgMap[hash][peerInfo.ID] = Exists
-		}
-
-		for _, msgHash := range messageHashes {
-			if msgMap[msgHash][peerInfo.ID] != Exists {
-				msgMap[msgHash][peerInfo.ID] = DoesNotExist
-			}
-		}
-
-		msgMapLock.Unlock()
+		onResult(result)
 
 		retry := true
 		success := false

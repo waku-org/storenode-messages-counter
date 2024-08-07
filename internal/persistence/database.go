@@ -3,9 +3,11 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/waku-org/go-waku/waku/v2/protocol/pb"
 	"github.com/waku-org/go-waku/waku/v2/timesource"
@@ -237,6 +239,40 @@ func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsub
 	return result, nil
 }
 
+func (d *DBStore) GetMissingMessages(from time.Time, to time.Time, clusterID uint) (map[peer.ID][]pb.MessageHash, error) {
+	rows, err := d.db.Query("SELECT messageHash, storenode FROM missingMessages WHERE storedAt >= $1 AND storedAt <= $2 AND clusterId = $3 AND msgStatus = 'does_not_exist'", from.UnixNano(), to.UnixNano(), clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make(map[peer.ID][]pb.MessageHash)
+	for rows.Next() {
+		var messageHashStr string
+		var peerIDStr string
+		err := rows.Scan(&messageHashStr, &peerIDStr)
+		if err != nil {
+			return nil, err
+		}
+
+		peerID, err := peer.Decode(peerIDStr)
+		if err != nil {
+			d.log.Warn("could not decode peerID", zap.String("peerIDStr", peerIDStr), zap.Error(err))
+			continue
+		}
+
+		messageHashBytes, err := hexutil.Decode(messageHashStr)
+		if err != nil {
+			d.log.Warn("could not decode messageHash", zap.String("messageHashStr", messageHashStr), zap.Error(err))
+			continue
+		}
+
+		results[peerID] = append(results[peerID], pb.ToMessageHash(messageHashBytes))
+	}
+
+	return results, nil
+}
+
 func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string, lastSyncTimestamp time.Time) error {
 	stmt, err := tx.Prepare("INSERT INTO syncTopicStatus(clusterId, pubsubTopic, lastSyncTimestamp) VALUES ($1, $2, $3) ON CONFLICT(clusterId, pubsubTopic) DO UPDATE SET lastSyncTimestamp = $4")
 	if err != nil {
@@ -270,6 +306,26 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 	return nil
 }
 
+func (d *DBStore) MarkMessagesAsFound(peerID peer.ID, messageHashes []pb.MessageHash, clusterID uint) error {
+	query := "UPDATE missingMessages SET foundOnRecheck = true WHERE clusterID = $1 AND messageHash IN ("
+	for i := range messageHashes {
+		if i > 0 {
+			query += ", "
+		}
+		query += fmt.Sprintf("$%d", i+2)
+	}
+	query += ")"
+
+	args := []interface{}{clusterID}
+	for _, messageHash := range messageHashes {
+		args = append(args, messageHash)
+	}
+
+	_, err := d.db.Exec(query, args...)
+
+	return err
+}
+
 func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode peer.ID) error {
 	stmt, err := d.db.Prepare("INSERT INTO storeNodeUnavailable(runId, storenode, requestTime) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
 	if err != nil {
@@ -284,4 +340,32 @@ func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode peer.ID) err
 	}
 
 	return nil
+}
+
+func (d *DBStore) CountMissingMessages(from time.Time, to time.Time, clusterID uint) (map[peer.ID]int, error) {
+	rows, err := d.db.Query("SELECT storenode, count(1) as cnt FROM missingMessages WHERE storedAt >= $1 AND storedAt <= $2 AND clusterId = $3 AND msgStatus = 'does_not_exist' GROUP BY storenode", from.UnixNano(), to.UnixNano(), clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+	results := make(map[peer.ID]int)
+	for rows.Next() {
+		var peerIDStr string
+		var cnt int
+		err := rows.Scan(&peerIDStr, &cnt)
+		if err != nil {
+			return nil, err
+		}
+
+		peerID, err := peer.Decode(peerIDStr)
+		if err != nil {
+			d.log.Warn("could not decode peerID", zap.String("peerIDStr", peerIDStr), zap.Error(err))
+			continue
+		}
+
+		results[peerID] = cnt
+	}
+
+	return results, nil
 }

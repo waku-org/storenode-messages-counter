@@ -40,11 +40,36 @@ var topicLastSync = prometheus.NewGaugeVec(
 	[]string{"pubsubtopic"},
 )
 
+var missingMessagesLastDay = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "msgcounter_missing_messages_last_day",
+		Help: "The number of messages missing in last 24hr (with 2hr delay)",
+	},
+	[]string{"storenode"},
+)
+
+var missingMessagesLastWeek = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "msgcounter_missing_messages_last_week",
+		Help: "The number of messages missing in last week (with 2hr delay)",
+	},
+	[]string{"storenode"},
+)
+
+var missingMessagesPreviousHour = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "msgcounter_missing_messages_prev_hour",
+		Help: "The number of messages missing in the previous hour",
+	},
+	[]string{"storenode"},
+)
+
 var collectors = []prometheus.Collector{
 	missingMessages,
 	storenodeAvailability,
 	totalMissingMessages,
 	topicLastSync,
+	missingMessagesLastDay,
 }
 
 // Metrics exposes the functions required to update prometheus metrics for relay protocol
@@ -53,6 +78,9 @@ type Metrics interface {
 	RecordStorenodeAvailability(peerID peer.ID, available bool)
 	RecordTotalMissingMessages(cnt int)
 	RecordLastSyncDate(topic string, date time.Time)
+	RecordMissingMessagesLastDay(peerID peer.ID, cnt int)
+	RecordMissingMessagesLastWeek(peerID peer.ID, cnt int)
+	RecordMissingMessagesPrevHour(peerID peer.ID, cnt int)
 }
 
 type metricsImpl struct {
@@ -93,5 +121,23 @@ func (m *metricsImpl) RecordTotalMissingMessages(cnt int) {
 func (m *metricsImpl) RecordLastSyncDate(topic string, date time.Time) {
 	go func() {
 		topicLastSync.WithLabelValues(topic).Set(float64(date.Unix()))
+	}()
+}
+
+func (m *metricsImpl) RecordMissingMessagesLastDay(peerID peer.ID, cnt int) {
+	go func() {
+		missingMessagesLastDay.WithLabelValues(peerID.String()).Set(float64(cnt))
+	}()
+}
+
+func (m *metricsImpl) RecordMissingMessagesLastWeek(peerID peer.ID, cnt int) {
+	go func() {
+		missingMessagesLastWeek.WithLabelValues(peerID.String()).Set(float64(cnt))
+	}()
+}
+
+func (m *metricsImpl) RecordMissingMessagesPrevHour(peerID peer.ID, cnt int) {
+	go func() {
+		missingMessagesPreviousHour.WithLabelValues(peerID.String()).Set(float64(cnt))
 	}()
 }
