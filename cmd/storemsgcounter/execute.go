@@ -174,7 +174,7 @@ func Execute(ctx context.Context, options Options) error {
 
 	go func() {
 
-		syncCheckTimer := time.NewTicker(30 * time.Minute)
+		syncCheckTimer := time.NewTimer(0)
 		defer syncCheckTimer.Stop()
 
 		for {
@@ -186,7 +186,6 @@ func Execute(ctx context.Context, options Options) error {
 					tmpUUID := uuid.New()
 					runId := hex.EncodeToString(tmpUUID[:])
 					runIdLogger := logger.With(zap.String("syncRunId", runId))
-					runIdLogger.Info("rechecking missing messages status")
 
 					err := application.checkMissingMessageStatus(ctx, storenodeIDs, runId, runIdLogger)
 					if err != nil {
@@ -201,6 +200,8 @@ func Execute(ctx context.Context, options Options) error {
 					}
 
 					runIdLogger.Info("missing messages recheck complete")
+
+					syncCheckTimer.Reset(30 * time.Minute)
 				}()
 			}
 		}
@@ -358,9 +359,14 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 func (app *Application) checkMissingMessageStatus(ctx context.Context, storenodes []peer.ID, runId string, logger *zap.Logger) error {
 	now := app.node.Timesource().Now()
 
+	from := now.Add(-2 * time.Hour)
+	to := now.Add(-time.Hour)
+
+	logger.Info("rechecking missing messages status", zap.Time("from", from), zap.Time("to", to), zap.Uint("clusterID", options.ClusterID))
+
 	// Get all messages whose status is missing or does not exist, and the column found_on_recheck is false
 	// if found, set found_on_recheck to true
-	missingMessages, err := app.db.GetMissingMessages(now.Add(-2*time.Hour), now.Add(-time.Hour), options.ClusterID)
+	missingMessages, err := app.db.GetMissingMessages(from, to, options.ClusterID)
 	if err != nil {
 		return err
 	}
