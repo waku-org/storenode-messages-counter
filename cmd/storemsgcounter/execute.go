@@ -177,13 +177,13 @@ func Execute(ctx context.Context, options Options) error {
 				runIdLogger := logger.With(zap.String("syncRunId", runId))
 				runIdLogger.Info("rechecking missing messages status")
 
-				err := application.checkMissingMessageStatus(ctx, runId, runIdLogger)
+				err := application.checkMissingMessageStatus(ctx, storenodeIDs, runId, runIdLogger)
 				if err != nil {
 					logger.Error("could not recheck the status of missing messages", zap.Error(err))
 					return
 				}
 
-				err = application.countMissingMessages()
+				err = application.countMissingMessages(storenodeIDs)
 				if err != nil {
 					logger.Error("could not count missing messages", zap.Error(err))
 					return
@@ -338,7 +338,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 	return nil
 }
 
-func (app *Application) checkMissingMessageStatus(ctx context.Context, runId string, logger *zap.Logger) error {
+func (app *Application) checkMissingMessageStatus(ctx context.Context, storenodes []peer.ID, runId string, logger *zap.Logger) error {
 	now := app.node.Timesource().Now()
 
 	// Get all messages whose status is missing or does not exist, and the column found_on_recheck is false
@@ -349,7 +349,8 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, runId str
 	}
 
 	wg := sync.WaitGroup{}
-	for storenodeID, messageHashes := range missingMessages {
+
+	for _, storenodeID := range storenodes {
 		wg.Add(1)
 		go func(peerID peer.ID, messageHashes []pb.MessageHash) {
 			defer wg.Done()
@@ -369,15 +370,14 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, runId str
 
 			app.metrics.RecordMissingMessagesPrevHour(peerID, len(messageHashes)-len(foundMissingMessages))
 
-		}(storenodeID, messageHashes)
+		}(storenodeID, missingMessages[storenodeID])
 	}
-
 	wg.Wait()
 
 	return nil
 }
 
-func (app *Application) countMissingMessages() error {
+func (app *Application) countMissingMessages(storenodes []peer.ID) error {
 
 	// not including last two hours in now to let sync work
 	now := app.node.Timesource().Now().Add(-2 * time.Hour)
@@ -396,8 +396,8 @@ func (app *Application) countMissingMessages() error {
 	if err != nil {
 		return err
 	}
-	for storenode, cnt := range results {
-		app.metrics.RecordMissingMessagesLastWeek(storenode, cnt)
+	for _, storenodeID := range storenodes {
+		app.metrics.RecordMissingMessagesLastWeek(storenodeID, results[storenodeID])
 	}
 	return nil
 }
@@ -538,6 +538,10 @@ func (app *Application) retrieveHistory(ctx context.Context, runId string, store
 func (app *Application) verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, messageHashes []pb.MessageHash, onResult func(result *store.Result), logger *zap.Logger) {
 	var result *store.Result
 	var err error
+
+	if len(messageHashes) == 0 {
+		return
+	}
 
 	peerInfo := app.node.Host().Peerstore().PeerInfo(peerID)
 
