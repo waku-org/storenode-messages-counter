@@ -368,7 +368,9 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, storenode
 				return
 			}
 
-			app.metrics.RecordMissingMessagesPrevHour(peerID, len(messageHashes)-len(foundMissingMessages))
+			cnt := len(messageHashes) - len(foundMissingMessages)
+			app.metrics.RecordMissingMessagesPrevHour(peerID, cnt)
+			logger.Info("missingMessages for the previous hour", zap.Stringer("storenode", peerID), zap.Int("cnt", cnt))
 
 		}(storenodeID, missingMessages[storenodeID])
 	}
