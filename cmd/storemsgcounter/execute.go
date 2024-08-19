@@ -274,7 +274,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 
 		// This avoids extremely large resultsets
 		if endTime.Sub(startTime) > timeInterval {
-			endTime = endTime.Add(timeInterval)
+			endTime = startTime.Add(timeInterval)
 			shouldResetTimer = true
 		}
 
