@@ -572,9 +572,6 @@ func (app *Application) retrieveHistory(ctx context.Context, runId string, store
 }
 
 func (app *Application) verifyMessageExistence(ctx context.Context, runId string, peerID peer.ID, messageHashes []pb.MessageHash, onResult func(result *store.Result), logger *zap.Logger) {
-	var result *store.Result
-	var err error
-
 	if len(messageHashes) == 0 {
 		return
 	}
@@ -594,6 +591,9 @@ func (app *Application) verifyMessageExistence(ctx context.Context, runId string
 		wg.Add(1)
 		go func(messageHashes []pb.MessageHash) {
 			defer wg.Done()
+
+			var result *store.Result
+			var err error
 
 			retry := true
 			success := false
