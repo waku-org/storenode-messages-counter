@@ -79,7 +79,7 @@ var cliFlags = []cli.Flag{
 		Name:        "retention-policy",
 		Usage:       "Retention policy. ",
 		Destination: &options.RetentionPolicy,
-		Value:       15 * 24 * time.Hour,
+		Value:       8 * 24 * time.Hour,
 		EnvVars:     []string{"STORE_MSG_CTR_RETENTION_POLICY"},
 	}),
 	cliutils.NewGenericFlagSingleValue(&cli.GenericFlag{
