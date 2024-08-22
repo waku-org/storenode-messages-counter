@@ -423,7 +423,7 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, storenode
 				}
 			}, logger)
 
-			err := app.db.MarkMessagesAsFound(peerID, maps.Keys(foundMissingMessages), options.ClusterID)
+			err := app.db.MarkMessagesAsFound(peerID, maps.Keys(foundMissingMessages))
 			if err != nil {
 				logger.Error("could not mark messages as found", zap.Error(err))
 				return
@@ -446,7 +446,7 @@ func (app *Application) countMissingMessages(storenodes []peer.ID) error {
 	now := app.node.Timesource().Now().Add(-2 * time.Hour)
 
 	// Count messages in last day (not including last two hours)
-	results, err := app.db.CountMissingMessages(now.Add(-24*time.Hour), now, options.ClusterID)
+	results, err := app.db.CountMissingMessages(now.Add(-24*time.Hour), now)
 	if err != nil {
 		return err
 	}
@@ -455,7 +455,7 @@ func (app *Application) countMissingMessages(storenodes []peer.ID) error {
 	}
 
 	// Count messages in last week (not including last two hours)
-	results, err = app.db.CountMissingMessages(now.Add(-24*time.Hour*7), now, options.ClusterID)
+	results, err = app.db.CountMissingMessages(now.Add(-24*time.Hour*7), now)
 	if err != nil {
 		return err
 	}
