@@ -20,6 +20,9 @@ type DBStore struct {
 	migrationFn     func(db *sql.DB, logger *zap.Logger) error
 	retentionPolicy time.Duration
 
+	clusterID uint
+	fleetName string
+
 	timesource timesource.Timesource
 	log        *zap.Logger
 
@@ -95,9 +98,11 @@ func DefaultOptions() []DBOption {
 // Creates a new DB store using the db specified via options.
 // It will run migrations if enabled
 // clean up records according to the retention policy used
-func NewDBStore(log *zap.Logger, options ...DBOption) (*DBStore, error) {
+func NewDBStore(clusterID uint, fleetName string, log *zap.Logger, options ...DBOption) (*DBStore, error) {
 	result := new(DBStore)
 	result.log = log.Named("dbstore")
+	result.clusterID = clusterID
+	result.fleetName = fleetName
 
 	optList := DefaultOptions()
 	optList = append(optList, options...)
@@ -205,14 +210,14 @@ func (d *DBStore) GetTrx(ctx context.Context) (*sql.Tx, error) {
 	return d.db.BeginTx(ctx, &sql.TxOptions{})
 }
 
-func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsubTopics []string) (map[string]*time.Time, error) {
+func (d *DBStore) GetTopicSyncStatus(ctx context.Context, pubsubTopics []string) (map[string]*time.Time, error) {
 	result := make(map[string]*time.Time)
 	for _, topic := range pubsubTopics {
 		result[topic] = nil
 	}
 
 	sqlQuery := `SELECT pubsubTopic, lastSyncTimestamp FROM syncTopicStatus WHERE clusterId = $1`
-	rows, err := d.db.QueryContext(ctx, sqlQuery, clusterID)
+	rows, err := d.db.QueryContext(ctx, sqlQuery, d.clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -239,8 +244,8 @@ func (d *DBStore) GetTopicSyncStatus(ctx context.Context, clusterID uint, pubsub
 	return result, nil
 }
 
-func (d *DBStore) GetMissingMessages(from time.Time, to time.Time, clusterID uint) (map[peer.ID][]pb.MessageHash, error) {
-	rows, err := d.db.Query("SELECT messageHash, storenode FROM missingMessages WHERE storedAt >= $1 AND storedAt <= $2 AND clusterId = $3 AND msgStatus = 'does_not_exist' AND foundOnRecheck = false", from.UnixNano(), to.UnixNano(), clusterID)
+func (d *DBStore) GetMissingMessages(from time.Time, to time.Time) (map[peer.ID][]pb.MessageHash, error) {
+	rows, err := d.db.Query("SELECT messageHash, storenode FROM missingMessages WHERE storedAt >= $1 AND storedAt <= $2 AND clusterId = $3 AND msgStatus = 'does_not_exist' AND foundOnRecheck = false", from.UnixNano(), to.UnixNano(), d.clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -273,21 +278,12 @@ func (d *DBStore) GetMissingMessages(from time.Time, to time.Time, clusterID uin
 	return results, nil
 }
 
-func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, clusterID uint, topic string, lastSyncTimestamp time.Time) error {
-	stmt, err := tx.Prepare("INSERT INTO syncTopicStatus(clusterId, pubsubTopic, lastSyncTimestamp) VALUES ($1, $2, $3) ON CONFLICT(clusterId, pubsubTopic) DO UPDATE SET lastSyncTimestamp = $4")
-	if err != nil {
-		return err
-	}
-
-	_, err = stmt.Exec(clusterID, topic, lastSyncTimestamp.UnixNano(), lastSyncTimestamp.UnixNano())
-	if err != nil {
-		return err
-	}
-
-	return stmt.Close()
+func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, topic string, lastSyncTimestamp time.Time) error {
+	_, err := tx.Exec("INSERT INTO syncTopicStatus(clusterId, pubsubTopic, lastSyncTimestamp) VALUES ($1, $2, $3) ON CONFLICT(clusterId, pubsubTopic) DO UPDATE SET lastSyncTimestamp = $4", d.clusterID, topic, lastSyncTimestamp.UnixNano(), lastSyncTimestamp.UnixNano())
+	return err
 }
 
-func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, clusterID uint, topic string, storenodes []peer.ID, status string) error {
+func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, topic string, storenodes []peer.ID, status string) error {
 	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, clusterId, pubsubTopic, messageHash, storenode, msgStatus, storedAt) VALUES ($1, $2, $3, $4, $5, $6, $7)")
 	if err != nil {
 		return err
@@ -296,11 +292,10 @@ func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash,
 
 	now := time.Now().UnixNano()
 	for _, s := range storenodes {
-		_, err := stmt.Exec(uuid, clusterID, topic, msgHash.String(), s, status, now)
+		_, err := stmt.Exec(uuid, d.clusterID, topic, msgHash.String(), s, status, now)
 		if err != nil {
 			return err
 		}
-
 	}
 
 	return nil
@@ -331,19 +326,8 @@ func (d *DBStore) MarkMessagesAsFound(peerID peer.ID, messageHashes []pb.Message
 }
 
 func (d *DBStore) RecordStorenodeUnavailable(uuid string, storenode peer.ID) error {
-	stmt, err := d.db.Prepare("INSERT INTO storeNodeUnavailable(runId, storenode, requestTime) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING")
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	now := time.Now().UnixNano()
-	_, err = stmt.Exec(uuid, storenode, now)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err := d.db.Exec("INSERT INTO storeNodeUnavailable(runId, storenode, requestTime) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", uuid, storenode, time.Now().UnixNano())
+	return err
 }
 
 func (d *DBStore) CountMissingMessages(from time.Time, to time.Time, clusterID uint) (map[peer.ID]int, error) {

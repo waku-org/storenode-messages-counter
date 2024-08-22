@@ -13,6 +13,7 @@ type Options struct {
 	LogLevel               string
 	LogEncoding            string
 	LogOutput              string
+	FleetName              string
 	ClusterID              uint
 	PubSubTopics           cli.StringSlice
 	DatabaseURL            string

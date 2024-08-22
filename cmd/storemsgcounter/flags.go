@@ -27,6 +27,12 @@ var cliFlags = []cli.Flag{
 		EnvVars:     []string{"STORE_MSG_CTR_ADDRESS"},
 	}),
 	&cli.StringFlag{Name: "config-file", Usage: "loads configuration from a TOML file (cmd-line parameters take precedence)"},
+	altsrc.NewStringFlag(&cli.StringFlag{
+		Name:        "fleet-name",
+		Usage:       "Fleet name",
+		Destination: &options.FleetName,
+		EnvVars:     []string{"STORE_MSG_CTR_FLEET_NAME"},
+	}),
 	cliutils.NewGenericFlagMultiValue(&cli.GenericFlag{
 		Name:  "storenode",
 		Usage: "Multiaddr of peers that supports storeV3 protocol. Option may be repeated",

@@ -71,7 +71,14 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 
-	dbStore, err := persistence.NewDBStore(logger, persistence.WithDB(db), persistence.WithMigrations(migrationFn), persistence.WithRetentionPolicy(options.RetentionPolicy))
+	dbStore, err := persistence.NewDBStore(
+		options.ClusterID,
+		options.FleetName,
+		logger,
+		persistence.WithDB(db),
+		persistence.WithMigrations(migrationFn),
+		persistence.WithRetentionPolicy(options.RetentionPolicy),
+	)
 	if err != nil {
 		return err
 	}
@@ -230,7 +237,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 	msgPubsubTopic = make(map[pb.MessageHash]string)
 	msgMapLock.Unlock()
 
-	topicSyncStatus, err := app.db.GetTopicSyncStatus(ctx, options.ClusterID, options.PubSubTopics.Value())
+	topicSyncStatus, err := app.db.GetTopicSyncStatus(ctx, options.PubSubTopics.Value())
 	if err != nil {
 		return false, err
 	}
@@ -355,7 +362,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 
 		if len(missingIn) != 0 {
 			logger.Info("missing message identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgPubsubTopic[msgHash]), zap.Int("num_nodes", len(missingIn)))
-			err := app.db.RecordMessage(runId, tx, msgHash, options.ClusterID, msgPubsubTopic[msgHash], missingIn, "does_not_exist")
+			err := app.db.RecordMessage(runId, tx, msgHash, msgPubsubTopic[msgHash], missingIn, "does_not_exist")
 			if err != nil {
 				return false, err
 			}
@@ -364,7 +371,7 @@ func (app *Application) verifyHistory(ctx context.Context, runId string, storeno
 
 		if len(unknownIn) != 0 {
 			logger.Info("message with unknown state identified", zap.Stringer("hash", msgHash), zap.String("pubsubTopic", msgPubsubTopic[msgHash]), zap.Int("num_nodes", len(missingIn)))
-			err = app.db.RecordMessage(runId, tx, msgHash, options.ClusterID, msgPubsubTopic[msgHash], unknownIn, "unknown")
+			err = app.db.RecordMessage(runId, tx, msgHash, msgPubsubTopic[msgHash], unknownIn, "unknown")
 			if err != nil {
 				return false, err
 			}
@@ -397,7 +404,7 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, storenode
 
 	// Get all messages whose status is missing or does not exist, and the column found_on_recheck is false
 	// if found, set found_on_recheck to true
-	missingMessages, err := app.db.GetMissingMessages(from, to, options.ClusterID)
+	missingMessages, err := app.db.GetMissingMessages(from, to)
 	if err != nil {
 		return err
 	}
@@ -562,7 +569,7 @@ func (app *Application) retrieveHistory(ctx context.Context, runId string, store
 	wg.Wait()
 
 	// Update db with last sync time
-	err := app.db.UpdateTopicSyncState(tx, options.ClusterID, topic, endTime)
+	err := app.db.UpdateTopicSyncState(tx, topic, endTime)
 	if err != nil {
 		logger.Panic("could not update topic sync state", zap.Error(err))
 	}
