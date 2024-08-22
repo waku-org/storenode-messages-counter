@@ -166,7 +166,7 @@ func Execute(ctx context.Context, options Options) error {
 			case <-missingMessagesTimer.C:
 				tmpUUID := uuid.New()
 				runId := hex.EncodeToString(tmpUUID[:])
-				runIdLogger := logger.With(zap.String("runId", runId))
+				runIdLogger := logger.With(zap.String("runId", runId), zap.String("fleet", options.FleetName), zap.Uint("clusterID", options.ClusterID))
 
 				runIdLogger.Info("verifying message history...")
 				shouldResetTimer, err := application.verifyHistory(ctx, runId, storenodeIDs, runIdLogger)
@@ -400,7 +400,7 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, storenode
 	from := now.Add(-2 * time.Hour)
 	to := now.Add(-time.Hour)
 
-	logger.Info("rechecking missing messages status", zap.Time("from", from), zap.Time("to", to), zap.Uint("clusterID", options.ClusterID))
+	logger.Info("rechecking missing messages status", zap.Time("from", from), zap.Time("to", to))
 
 	// Get all messages whose status is missing or does not exist, and the column found_on_recheck is false
 	// if found, set found_on_recheck to true
