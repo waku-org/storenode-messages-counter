@@ -130,7 +130,7 @@ func Execute(ctx context.Context, options Options) error {
 		return err
 	}
 
-	metrics := metrics.NewMetrics(prometheus.DefaultRegisterer, logger)
+	metrics := metrics.NewMetrics(options.ClusterID, options.FleetName, prometheus.DefaultRegisterer, logger)
 
 	err = wakuNode.Start(ctx)
 	if err != nil {

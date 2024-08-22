@@ -14,14 +14,15 @@ var missingMessages = prometheus.NewGaugeVec(
 		Name: "msgcounter_missing_messages",
 		Help: "The messages identified as missing and the reason why they're missing",
 	},
-	[]string{"storenode", "status"},
+	[]string{"fleetName", "storenode", "status"},
 )
 
-var totalMissingMessages = prometheus.NewGauge(
+var totalMissingMessages = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "msgcounter_total_missing_messages",
 		Help: "The global total number of missing messages",
 	},
+	[]string{"fleetName"},
 )
 
 var storenodeAvailability = prometheus.NewGaugeVec(
@@ -29,7 +30,7 @@ var storenodeAvailability = prometheus.NewGaugeVec(
 		Name: "msgcounter_storenode_availability",
 		Help: "Indicate whether a store node is available or not",
 	},
-	[]string{"storenode"},
+	[]string{"fleetName", "storenode"},
 )
 
 var topicLastSync = prometheus.NewGaugeVec(
@@ -37,7 +38,7 @@ var topicLastSync = prometheus.NewGaugeVec(
 		Name: "msgcounter_topic_lastsyncdate_seconds",
 		Help: "Indicates the last syncdate for a pubsubtopic",
 	},
-	[]string{"pubsubtopic"},
+	[]string{"fleetName", "pubsubtopic"},
 )
 
 var missingMessagesLastDay = prometheus.NewGaugeVec(
@@ -45,7 +46,7 @@ var missingMessagesLastDay = prometheus.NewGaugeVec(
 		Name: "msgcounter_missing_messages_last_day",
 		Help: "The number of messages missing in last 24hr (with 2hr delay)",
 	},
-	[]string{"storenode"},
+	[]string{"fleetName", "storenode"},
 )
 
 var missingMessagesLastWeek = prometheus.NewGaugeVec(
@@ -53,7 +54,7 @@ var missingMessagesLastWeek = prometheus.NewGaugeVec(
 		Name: "msgcounter_missing_messages_last_week",
 		Help: "The number of messages missing in last week (with 2hr delay)",
 	},
-	[]string{"storenode"},
+	[]string{"fleetName", "storenode"},
 )
 
 var missingMessagesPreviousHour = prometheus.NewGaugeVec(
@@ -61,7 +62,7 @@ var missingMessagesPreviousHour = prometheus.NewGaugeVec(
 		Name: "msgcounter_missing_messages_prev_hour",
 		Help: "The number of messages missing in the previous hour",
 	},
-	[]string{"storenode"},
+	[]string{"fleetName", "storenode"},
 )
 
 var collectors = []prometheus.Collector{
@@ -86,21 +87,25 @@ type Metrics interface {
 }
 
 type metricsImpl struct {
-	log *zap.Logger
-	reg prometheus.Registerer
+	log       *zap.Logger
+	reg       prometheus.Registerer
+	clusterId uint
+	fleetName string
 }
 
-func NewMetrics(reg prometheus.Registerer, logger *zap.Logger) Metrics {
+func NewMetrics(clusterId uint, fleetName string, reg prometheus.Registerer, logger *zap.Logger) Metrics {
 	metricshelper.RegisterCollectors(reg, collectors...)
 	return &metricsImpl{
-		log: logger,
-		reg: reg,
+		log:       logger,
+		reg:       reg,
+		clusterId: clusterId,
+		fleetName: fleetName,
 	}
 }
 
 func (m *metricsImpl) RecordMissingMessages(peerID peer.ID, status string, length int) {
 	go func() {
-		missingMessages.WithLabelValues(peerID.String(), status).Set(float64(length))
+		missingMessages.WithLabelValues(m.fleetName, peerID.String(), status).Set(float64(length))
 	}()
 }
 
@@ -110,36 +115,36 @@ func (m *metricsImpl) RecordStorenodeAvailability(peerID peer.ID, available bool
 		if !available {
 			gaugeValue = 0
 		}
-		storenodeAvailability.WithLabelValues(peerID.String()).Set(gaugeValue)
+		storenodeAvailability.WithLabelValues(m.fleetName, peerID.String()).Set(gaugeValue)
 	}()
 }
 
 func (m *metricsImpl) RecordTotalMissingMessages(cnt int) {
 	go func() {
-		totalMissingMessages.Set(float64(cnt))
+		totalMissingMessages.WithLabelValues(m.fleetName).Set(float64(cnt))
 	}()
 }
 
 func (m *metricsImpl) RecordLastSyncDate(topic string, date time.Time) {
 	go func() {
-		topicLastSync.WithLabelValues(topic).Set(float64(date.Unix()))
+		topicLastSync.WithLabelValues(m.fleetName, topic).Set(float64(date.Unix()))
 	}()
 }
 
 func (m *metricsImpl) RecordMissingMessagesLastDay(peerID peer.ID, cnt int) {
 	go func() {
-		missingMessagesLastDay.WithLabelValues(peerID.String()).Set(float64(cnt))
+		missingMessagesLastDay.WithLabelValues(m.fleetName, peerID.String()).Set(float64(cnt))
 	}()
 }
 
 func (m *metricsImpl) RecordMissingMessagesLastWeek(peerID peer.ID, cnt int) {
 	go func() {
-		missingMessagesLastWeek.WithLabelValues(peerID.String()).Set(float64(cnt))
+		missingMessagesLastWeek.WithLabelValues(m.fleetName, peerID.String()).Set(float64(cnt))
 	}()
 }
 
 func (m *metricsImpl) RecordMissingMessagesPrevHour(peerID peer.ID, cnt int) {
 	go func() {
-		missingMessagesPreviousHour.WithLabelValues(peerID.String()).Set(float64(cnt))
+		missingMessagesPreviousHour.WithLabelValues(m.fleetName, peerID.String()).Set(float64(cnt))
 	}()
 }
