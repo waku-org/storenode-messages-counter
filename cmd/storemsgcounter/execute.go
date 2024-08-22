@@ -534,7 +534,10 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 				cursorLogger.Error("could not query storenode", zap.Error(err))
 				time.Sleep(2 * time.Second)
 			} else {
-				cursorLogger.Info("more messages available", zap.Int("len", len(result.Messages())))
+				msgLen := len(result.Messages())
+				if msgLen != 0 {
+					cursorLogger.Info("more messages available", zap.Int("len", msgLen))
+				}
 				retry = false
 				success = true
 			}
