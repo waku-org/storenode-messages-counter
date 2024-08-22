@@ -121,11 +121,14 @@ func NewDBStore(clusterID uint, fleetName string, log *zap.Logger, options ...DB
 		}
 	}
 
-	result.db.Exec("update missingMessages set fleet = 'status.prod'")
+	_, err := result.db.Exec("update missingMessages set fleet = 'status.prod'")
+	log.Info("RESULT", zap.Error(err))
 
 	result.db.Exec("update storeNodeUnavailable set fleet = 'status.prod'")
+	log.Info("RESULT", zap.Error(err))
 
 	result.db.Exec("update syncTopicStatus set fleet = 'status.prod'")
+	log.Info("RESULT", zap.Error(err))
 
 	return result, nil
 }
