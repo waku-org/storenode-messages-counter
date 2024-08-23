@@ -19,11 +19,11 @@ A grafana dashboard is available in https://grafana.infra.status.im/d/hmX6pJ_Iz/
 
 # Browsing the logs
 
-You can browse the logs in kibana at https://kibana.infra.status.im/goto/0be1cef0-1782-11ef-8a2b-91a1a792bd9c
+You can browse the logs in kibana at https://kibana.infra.status.im/goto/7342ed70-6162-11ef-bfa2-75c6d129a2cb
 
 Assuming the link is not available use the following parameters:
 - `logsource`: `node-01.he-eu-hel1.tmetry.misc`
-- `program`: `docker/telemetry-counter`
+- `program`: `docker/telemetry-counter-status-prod`, `docker/telemetry-counter-status-staging`
 
 # Development
 
