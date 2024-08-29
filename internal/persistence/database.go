@@ -121,6 +121,10 @@ func NewDBStore(clusterID uint, fleetName string, log *zap.Logger, options ...DB
 		}
 	}
 
+	result.db.Exec("DELETE FROM synctopicstatus WHERE clusterid = 16 AND fleet IN( 'waku-sandbox', 'waku-test', 'status.stagging') ")
+	result.db.Exec("DELETE FROM missingmessages WHERE clusterid = 16 AND fleet IN( 'waku-sandbox', 'waku-test', 'status.stagging') ")
+	result.db.Exec("DELETE FROM storenodeunavailable WHERE fleet = 'status.stagging'")
+
 	return result, nil
 }
 
