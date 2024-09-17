@@ -475,7 +475,7 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 	success := false
 	count := 1
 	for retry && count <= maxAttempts {
-		queryLogger.Info("retrieving message history for topic!", zap.Int("attempt", count))
+		queryLogger.Info("retrieving message history for topic", zap.Int("attempt", count))
 
 		tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 		result, err = app.node.Store().Query(tCtx, store.FilterCriteria{
