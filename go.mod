@@ -18,7 +18,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.12.4
 	github.com/prometheus/client_golang v1.19.1
 	github.com/urfave/cli/v2 v2.27.2
-	github.com/waku-org/go-waku v0.8.1-0.20240806200653-4f1d692413e9
+	github.com/waku-org/go-waku v0.8.1-0.20240917141301-991e872de95c
 	go.opencensus.io v0.24.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842

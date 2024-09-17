@@ -475,7 +475,11 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 	success := false
 	count := 1
 	for retry && count <= maxAttempts {
-		queryLogger.Info("retrieving message history for topic", zap.Int("attempt", count))
+		requestID := protocol.GenerateRequestID()
+
+		queryLogger.Info("retrieving message history for topic",
+			zap.Int("attempt", count),
+			zap.String("requestID", hex.EncodeToString(requestID)))
 
 		tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 		result, err = app.node.Store().Query(tCtx, store.FilterCriteria{
@@ -486,7 +490,9 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 		cancel()
 
 		if err != nil {
-			queryLogger.Error("could not query storenode", zap.Error(err), zap.Int("attempt", count))
+			queryLogger.Error("could not query storenode",
+				zap.Error(err), zap.Int("attempt", count),
+				zap.String("requestID", hex.EncodeToString(requestID)))
 			time.Sleep(2 * time.Second)
 		} else {
 			queryLogger.Info("messages available", zap.Int("len", len(result.Messages())))

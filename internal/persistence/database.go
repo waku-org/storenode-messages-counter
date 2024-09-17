@@ -284,7 +284,7 @@ func (d *DBStore) UpdateTopicSyncState(tx *sql.Tx, topic string, lastSyncTimesta
 }
 
 func (d *DBStore) RecordMessage(uuid string, tx *sql.Tx, msgHash pb.MessageHash, topic string, storenodes []peer.ID, status string) error {
-	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, fleet, clusterId, pubsubTopic, messageHash, storenode, msgStatus, storedAt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)")
+	stmt, err := tx.Prepare("INSERT INTO missingMessages(runId, fleet, clusterId, pubsubTopic, messageHash, storenode, msgStatus, storedAt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (messageHash, storenode, fleet) DO UPDATE pubsubTopic = EXCLUDED.pubsubTopic, msgStatus = EXCLUDED.msgStatus, storedAt = EXCLUDED.storedAt, clusterId = EXCLUDED.clusterId")
 	if err != nil {
 		return err
 	}
