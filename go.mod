@@ -18,10 +18,11 @@ require (
 	github.com/multiformats/go-multiaddr v0.12.4
 	github.com/prometheus/client_golang v1.19.1
 	github.com/urfave/cli/v2 v2.27.2
-	github.com/waku-org/go-waku v0.8.1-0.20240917141301-991e872de95c
+	github.com/waku-org/go-waku v0.8.1-0.20240918210937-f0acee4d1dd3
 	go.opencensus.io v0.24.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
+	golang.org/x/time v0.5.0
 	google.golang.org/protobuf v1.34.1
 )
 
@@ -161,7 +162,6 @@ require (
 	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
-	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.21.0 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

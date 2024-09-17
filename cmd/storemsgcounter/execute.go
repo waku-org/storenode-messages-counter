@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/exp/maps"
+	"golang.org/x/time/rate"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/google/uuid"
@@ -138,10 +139,13 @@ func Execute(ctx context.Context, options Options) error {
 	}
 	defer wakuNode.Stop()
 
+	rateLimiters := make(map[peer.ID]*rate.Limiter)
+
 	var storenodeIDs peer.IDSlice
 	for _, s := range storenodes {
 		wakuNode.Host().Peerstore().AddAddrs(s.ID, s.Addrs, peerstore.PermanentAddrTTL)
 		storenodeIDs = append(storenodeIDs, s.ID)
+		rateLimiters[s.ID] = rate.NewLimiter(7, 1)
 	}
 
 	err = dbStore.Start(ctx, wakuNode.Timesource())
@@ -476,7 +480,6 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 	count := 1
 	for retry && count <= maxAttempts {
 		requestID := protocol.GenerateRequestID()
-
 		queryLogger.Info("retrieving message history for topic",
 			zap.Int("attempt", count),
 			zap.String("requestID", hex.EncodeToString(requestID)))
@@ -532,9 +535,10 @@ func (app *Application) fetchStoreNodeMessages(ctx context.Context, runId string
 		count := 1
 		cursorLogger := queryLogger.With(zap.String("cursor", hex.EncodeToString(result.Cursor())))
 		for retry && count <= maxAttempts {
-			cursorLogger.Info("retrieving next page")
+			requestID := protocol.GenerateRequestID()
+			cursorLogger.Info("retrieving next page", zap.String("requestID", hex.EncodeToString(requestID)))
 			tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-			err = result.Next(tCtx)
+			err = result.Next(tCtx, store.WithRequestID(requestID))
 			cancel()
 			if err != nil {
 				cursorLogger.Error("could not query storenode", zap.Error(err))
@@ -616,6 +620,7 @@ func (app *Application) verifyMessageExistence(ctx context.Context, runId string
 			count := 1
 			for retry && count <= maxAttempts {
 				queryLogger.Info("querying by hash", zap.Int("attempt", count))
+
 				tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
 				result, err = app.node.Store().QueryByHash(tCtx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID), store.WithPaging(false, 100))
 				cancel()
@@ -649,9 +654,10 @@ func (app *Application) verifyMessageExistence(ctx context.Context, runId string
 				success := false
 				count := 1
 				for retry && count <= maxAttempts {
-					queryLogger.Info("executing next while querying hashes", zap.String("cursor", hexutil.Encode(result.Cursor())), zap.Int("attempt", count))
+					requestID := protocol.GenerateRequestID()
+					queryLogger.Info("executing next while querying hashes", zap.String("requestID", hex.EncodeToString(requestID)), zap.String("cursor", hexutil.Encode(result.Cursor())), zap.Int("attempt", count))
 					tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-					err = result.Next(tCtx)
+					err = result.Next(tCtx, store.WithRequestID(requestID))
 					cancel()
 					if err != nil {
 						queryLogger.Error("could not query storenode", zap.String("cursor", hexutil.Encode(result.Cursor())), zap.Error(err), zap.Int("attempt", count))
