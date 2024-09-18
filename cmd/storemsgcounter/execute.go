@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"golang.org/x/exp/maps"
-	"golang.org/x/time/rate"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/google/uuid"
@@ -139,13 +138,10 @@ func Execute(ctx context.Context, options Options) error {
 	}
 	defer wakuNode.Stop()
 
-	rateLimiters := make(map[peer.ID]*rate.Limiter)
-
 	var storenodeIDs peer.IDSlice
 	for _, s := range storenodes {
 		wakuNode.Host().Peerstore().AddAddrs(s.ID, s.Addrs, peerstore.PermanentAddrTTL)
 		storenodeIDs = append(storenodeIDs, s.ID)
-		rateLimiters[s.ID] = rate.NewLimiter(7, 1)
 	}
 
 	err = dbStore.Start(ctx, wakuNode.Timesource())
