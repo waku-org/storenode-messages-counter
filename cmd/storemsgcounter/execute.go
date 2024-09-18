@@ -125,6 +125,7 @@ func Execute(ctx context.Context, options Options) error {
 		node.WithNTP(),
 		node.WithClusterID(uint16(options.ClusterID)),
 		node.WithHostAddress(hostAddr),
+		node.WithWakuStoreRateLimit(7),
 	)
 	if err != nil {
 		return err
