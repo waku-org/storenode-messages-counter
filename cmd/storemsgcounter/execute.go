@@ -41,7 +41,7 @@ const (
 const timeInterval = 2 * time.Minute
 const delay = 5 * time.Minute
 const maxAttempts = 3
-const maxMsgHashesPerRequest = 100
+const maxMsgHashesPerRequest = 25
 
 type Application struct {
 	node    *node.WakuNode
@@ -619,7 +619,7 @@ func (app *Application) verifyMessageExistence(ctx context.Context, runId string
 				queryLogger.Info("querying by hash", zap.Int("attempt", count))
 
 				tCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-				result, err = app.node.Store().QueryByHash(tCtx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID), store.WithPaging(false, 100))
+				result, err = app.node.Store().QueryByHash(tCtx, messageHashes, store.IncludeData(false), store.WithPeer(peerInfo.ID), store.WithPaging(false, uint64(len(messageHashes))))
 				cancel()
 				if err != nil {
 					queryLogger.Error("could not query storenode", zap.Error(err), zap.Int("attempt", count))
