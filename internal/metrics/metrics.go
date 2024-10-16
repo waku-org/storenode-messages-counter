@@ -41,6 +41,14 @@ var topicLastSync = prometheus.NewGaugeVec(
 	[]string{"fleetName", "pubsubtopic"},
 )
 
+var missingMessagesLastHour = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "msgcounter_missing_messages_last_hour",
+		Help: "The number of messages missing in last hour (excluding the last 5 minutes)",
+	},
+	[]string{"fleetName", "storenode"},
+)
+
 var missingMessagesLastDay = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "msgcounter_missing_messages_last_day",
@@ -81,6 +89,7 @@ type Metrics interface {
 	RecordStorenodeAvailability(peerID peer.ID, available bool)
 	RecordTotalMissingMessages(cnt int)
 	RecordLastSyncDate(topic string, date time.Time)
+	RecordMissingMessagesLastHour(peerID peer.ID, cnt int)
 	RecordMissingMessagesLastDay(peerID peer.ID, cnt int)
 	RecordMissingMessagesLastWeek(peerID peer.ID, cnt int)
 	RecordMissingMessagesPrevHour(peerID peer.ID, cnt int)
@@ -128,6 +137,12 @@ func (m *metricsImpl) RecordTotalMissingMessages(cnt int) {
 func (m *metricsImpl) RecordLastSyncDate(topic string, date time.Time) {
 	go func() {
 		topicLastSync.WithLabelValues(m.fleetName, topic).Set(float64(date.Unix()))
+	}()
+}
+
+func (m *metricsImpl) RecordMissingMessagesLastHour(peerID peer.ID, cnt int) {
+	go func() {
+		missingMessagesLastHour.WithLabelValues(m.fleetName, peerID.String()).Set(float64(cnt))
 	}()
 }
 
