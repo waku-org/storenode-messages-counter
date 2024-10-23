@@ -214,7 +214,7 @@ func Execute(ctx context.Context, options Options) error {
 
 					runIdLogger.Info("missing messages recheck complete")
 
-					syncCheckTimer.Reset(30 * time.Minute)
+					syncCheckTimer.Reset(15 * time.Minute)
 				}()
 			}
 		}
@@ -442,12 +442,22 @@ func (app *Application) checkMissingMessageStatus(ctx context.Context, storenode
 }
 
 func (app *Application) countMissingMessages(storenodes []peer.ID) error {
+	now := app.node.Timesource().Now().Add(-delay)
+
+	// Count messages in last hour (not including last 5 minutes)
+	results, err := app.db.CountMissingMessages(now.Add(-time.Hour), now)
+	if err != nil {
+		return err
+	}
+	for storenode, cnt := range results {
+		app.metrics.RecordMissingMessagesLastHour(storenode, cnt)
+	}
 
 	// not including last two hours in now to let sync work
-	now := app.node.Timesource().Now().Add(-2 * time.Hour)
+	_2hAgo := now.Add(-2 * time.Hour)
 
 	// Count messages in last day (not including last two hours)
-	results, err := app.db.CountMissingMessages(now.Add(-24*time.Hour), now)
+	results, err = app.db.CountMissingMessages(now.Add(-24*time.Hour), _2hAgo)
 	if err != nil {
 		return err
 	}
@@ -456,7 +466,7 @@ func (app *Application) countMissingMessages(storenodes []peer.ID) error {
 	}
 
 	// Count messages in last week (not including last two hours)
-	results, err = app.db.CountMissingMessages(now.Add(-24*time.Hour*7), now)
+	results, err = app.db.CountMissingMessages(_2hAgo.Add(-24*time.Hour*7), _2hAgo)
 	if err != nil {
 		return err
 	}
