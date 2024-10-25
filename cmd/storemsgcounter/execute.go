@@ -449,8 +449,8 @@ func (app *Application) countMissingMessages(storenodes []peer.ID) error {
 	if err != nil {
 		return err
 	}
-	for storenode, cnt := range results {
-		app.metrics.RecordMissingMessagesLastHour(storenode, cnt)
+	for _, storenodeID := range storenodes {
+		app.metrics.RecordMissingMessagesLastHour(storenodeID, results[storenodeID])
 	}
 
 	// not including last two hours in now to let sync work
@@ -461,8 +461,8 @@ func (app *Application) countMissingMessages(storenodes []peer.ID) error {
 	if err != nil {
 		return err
 	}
-	for storenode, cnt := range results {
-		app.metrics.RecordMissingMessagesLastDay(storenode, cnt)
+	for _, storenodeID := range storenodes {
+		app.metrics.RecordMissingMessagesLastDay(storenodeID, results[storenodeID])
 	}
 
 	// Count messages in last week (not including last two hours)
